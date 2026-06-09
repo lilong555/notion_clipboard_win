@@ -5,6 +5,7 @@
 #include "app_icon.h"
 #include "http_client.h"
 #include "json.h"
+#include "logger.h"
 #include "resource.h"
 #include "util.h"
 #include "win_util.h"
@@ -18,7 +19,6 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
-#include <fstream>
 #include <functional>
 #include <iomanip>
 #include <iostream>
@@ -48,6 +48,7 @@ using ncw::DefaultStateDir;
 using ncw::GetEnvUtf8;
 using ncw::IsoUtcTimestampFromUnixMs;
 using ncw::LocalTimestamp;
+using ncw::Logger;
 using ncw::NowUnixMs;
 using ncw::ParseBool;
 using ncw::ParseIntOrDefault;
@@ -90,51 +91,6 @@ HICON LoadApplicationIcon(HINSTANCE instance, int width, int height)
     }
     return CreateGeneratedAppIcon(width, height);
 }
-
-class Logger
-{
-public:
-    Logger(fs::path log_path, bool mirror_console) : log_path_(std::move(log_path)), mirror_console_(mirror_console)
-    {
-        fs::create_directories(log_path_.parent_path());
-    }
-
-    void Info(const std::string &message)
-    {
-        Write("INFO", message);
-    }
-
-    void Warn(const std::string &message)
-    {
-        Write("WARN", message);
-    }
-
-    void Error(const std::string &message)
-    {
-        Write("ERROR", message);
-    }
-
-private:
-    void Write(const char *level, const std::string &message)
-    {
-        const std::string line = LocalTimestamp() + " [" + level + "] " + message + "\n";
-        std::lock_guard<std::mutex> lock(mutex_);
-        std::ofstream output(log_path_, std::ios::binary | std::ios::app);
-        if (output)
-        {
-            output.write(line.data(), static_cast<std::streamsize>(line.size()));
-        }
-        if (mirror_console_)
-        {
-            std::cout << line;
-        }
-        OutputDebugStringW(Utf8ToWide(line).c_str());
-    }
-
-    fs::path log_path_;
-    bool mirror_console_ = false;
-    std::mutex mutex_;
-};
 
 std::string EscapeJson(const std::string &input)
 {
