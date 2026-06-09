@@ -3,7 +3,9 @@
 #include <shellapi.h>
 
 #include "app_icon.h"
+#include "http_client.h"
 #include "json.h"
+#include "win_util.h"
 
 #include <algorithm>
 #include <atomic>
@@ -36,10 +38,12 @@ namespace
 using ncw::JsonValue;
 using ncw::ParseJson;
 using ncw::CreateGeneratedAppIcon;
+using ncw::HttpResponse;
+using ncw::LastErrorMessage;
+using ncw::Utf8ToWide;
+using ncw::WideToUtf8;
+using ncw::WinHttpClient;
 
-constexpr const char *kNotionVersion = "2026-03-11";
-constexpr const wchar_t *kNotionHost = L"api.notion.com";
-constexpr int kNotionPort = INTERNET_DEFAULT_HTTPS_PORT;
 constexpr UINT_PTR kClipboardDebounceTimer = 1001;
 constexpr UINT kUploadHotkeyId = 2001;
 constexpr UINT kTrayIconId = 1;
@@ -55,69 +59,6 @@ constexpr UINT kMenuOpenLog = 3008;
 constexpr UINT kMenuOpenStateDir = 3009;
 constexpr UINT kMenuExit = 3010;
 constexpr const wchar_t *kAppDisplayName = L"Notion Clipboard Win";
-
-struct HttpResponse
-{
-    long status_code = 0;
-    std::string body;
-    int retry_after_seconds = 0;
-};
-
-std::wstring Utf8ToWide(const std::string &input)
-{
-    if (input.empty())
-    {
-        return L"";
-    }
-    const int size = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, input.data(),
-                                         static_cast<int>(input.size()), nullptr, 0);
-    if (size <= 0)
-    {
-        throw std::runtime_error("UTF-8 转 UTF-16 失败");
-    }
-    std::wstring output(static_cast<std::size_t>(size), L'\0');
-    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, input.data(), static_cast<int>(input.size()), output.data(),
-                        size);
-    return output;
-}
-
-std::string WideToUtf8(const std::wstring &input)
-{
-    if (input.empty())
-    {
-        return "";
-    }
-    const int size = WideCharToMultiByte(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), nullptr, 0, nullptr,
-                                         nullptr);
-    if (size <= 0)
-    {
-        throw std::runtime_error("UTF-16 转 UTF-8 失败");
-    }
-    std::string output(static_cast<std::size_t>(size), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, input.data(), static_cast<int>(input.size()), output.data(), size, nullptr,
-                        nullptr);
-    return output;
-}
-
-std::string LastErrorMessage(DWORD error = GetLastError())
-{
-    LPWSTR raw = nullptr;
-    const DWORD size = FormatMessageW(FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM |
-                                          FORMAT_MESSAGE_IGNORE_INSERTS,
-                                      nullptr, error, MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
-                                      reinterpret_cast<LPWSTR>(&raw), 0, nullptr);
-    if (size == 0 || raw == nullptr)
-    {
-        return "Windows error " + std::to_string(error);
-    }
-    std::wstring wide(raw, raw + size);
-    LocalFree(raw);
-    while (!wide.empty() && (wide.back() == L'\r' || wide.back() == L'\n' || wide.back() == L'.'))
-    {
-        wide.pop_back();
-    }
-    return WideToUtf8(wide);
-}
 
 std::string Trim(const std::string &input)
 {
@@ -1229,165 +1170,6 @@ void PrintHelp()
               << "配置默认路径:\n"
               << "  " << WideToUtf8(DefaultConfigPath().wstring()) << "\n";
 }
-
-class ScopedInternetHandle
-{
-public:
-    ScopedInternetHandle() = default;
-    explicit ScopedInternetHandle(HINTERNET handle) : handle_(handle) {}
-    ~ScopedInternetHandle()
-    {
-        Reset(nullptr);
-    }
-
-    ScopedInternetHandle(const ScopedInternetHandle &) = delete;
-    ScopedInternetHandle &operator=(const ScopedInternetHandle &) = delete;
-
-    HINTERNET get() const
-    {
-        return handle_;
-    }
-
-    void Reset(HINTERNET handle)
-    {
-        if (handle_ != nullptr)
-        {
-            WinHttpCloseHandle(handle_);
-        }
-        handle_ = handle;
-    }
-
-private:
-    HINTERNET handle_ = nullptr;
-};
-
-class WinHttpClient
-{
-public:
-    WinHttpClient()
-    {
-        session_.Reset(WinHttpOpen(L"notion-clipboard-win/0.1",
-                                   WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-                                   WINHTTP_NO_PROXY_NAME,
-                                   WINHTTP_NO_PROXY_BYPASS,
-                                   0));
-        if (session_.get() == nullptr)
-        {
-            throw std::runtime_error("WinHTTP 初始化失败: " + LastErrorMessage());
-        }
-    }
-
-    HttpResponse Request(const std::wstring &method, const std::wstring &path, const std::string &body) const
-    {
-        ScopedInternetHandle connect(WinHttpConnect(session_.get(), kNotionHost, kNotionPort, 0));
-        if (connect.get() == nullptr)
-        {
-            throw std::runtime_error("连接 Notion 失败: " + LastErrorMessage());
-        }
-
-        const wchar_t *accept_types[] = {L"application/json", nullptr};
-        ScopedInternetHandle request(WinHttpOpenRequest(connect.get(), method.c_str(), path.c_str(), nullptr,
-                                                        WINHTTP_NO_REFERER, accept_types, WINHTTP_FLAG_SECURE));
-        if (request.get() == nullptr)
-        {
-            throw std::runtime_error("创建 HTTP 请求失败: " + LastErrorMessage());
-        }
-
-        WinHttpSetTimeouts(request.get(), 10000, 15000, 30000, 90000);
-
-        std::wstring headers = L"Authorization: Bearer ";
-        headers += Utf8ToWide(notion_token_);
-        headers += L"\r\nNotion-Version: ";
-        headers += Utf8ToWide(kNotionVersion);
-        headers += L"\r\nContent-Type: application/json\r\n";
-
-        LPVOID request_body = body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char *>(body.data());
-        const DWORD body_size = static_cast<DWORD>(body.size());
-        if (!WinHttpSendRequest(request.get(), headers.c_str(), static_cast<DWORD>(headers.size()), request_body,
-                                body_size, body_size, 0))
-        {
-            throw std::runtime_error("发送 HTTP 请求失败: " + LastErrorMessage());
-        }
-        if (!WinHttpReceiveResponse(request.get(), nullptr))
-        {
-            throw std::runtime_error("接收 HTTP 响应失败: " + LastErrorMessage());
-        }
-
-        DWORD status_code = 0;
-        DWORD status_size = sizeof(status_code);
-        if (!WinHttpQueryHeaders(request.get(), WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                                 WINHTTP_HEADER_NAME_BY_INDEX, &status_code, &status_size, WINHTTP_NO_HEADER_INDEX))
-        {
-            throw std::runtime_error("读取 HTTP 状态码失败: " + LastErrorMessage());
-        }
-
-        std::string response_body;
-        while (true)
-        {
-            DWORD available = 0;
-            if (!WinHttpQueryDataAvailable(request.get(), &available))
-            {
-                throw std::runtime_error("读取 HTTP 响应长度失败: " + LastErrorMessage());
-            }
-            if (available == 0)
-            {
-                break;
-            }
-            std::vector<char> buffer(available);
-            DWORD read = 0;
-            if (!WinHttpReadData(request.get(), buffer.data(), available, &read))
-            {
-                throw std::runtime_error("读取 HTTP 响应体失败: " + LastErrorMessage());
-            }
-            response_body.append(buffer.data(), read);
-        }
-
-        return {static_cast<long>(status_code), response_body, ReadRetryAfterSeconds(request.get())};
-    }
-
-    void SetToken(std::string token)
-    {
-        notion_token_ = std::move(token);
-    }
-
-private:
-    static int ReadRetryAfterSeconds(HINTERNET request)
-    {
-        DWORD size = 0;
-        if (WinHttpQueryHeaders(request, WINHTTP_QUERY_CUSTOM, L"Retry-After", WINHTTP_NO_OUTPUT_BUFFER, &size,
-                                WINHTTP_NO_HEADER_INDEX))
-        {
-            return 0;
-        }
-        if (GetLastError() != ERROR_INSUFFICIENT_BUFFER || size == 0)
-        {
-            return 0;
-        }
-
-        std::wstring value(size / sizeof(wchar_t), L'\0');
-        if (!WinHttpQueryHeaders(request, WINHTTP_QUERY_CUSTOM, L"Retry-After", value.data(), &size,
-                                 WINHTTP_NO_HEADER_INDEX))
-        {
-            return 0;
-        }
-        while (!value.empty() && value.back() == L'\0')
-        {
-            value.pop_back();
-        }
-
-        try
-        {
-            return std::max(0, std::stoi(value));
-        }
-        catch (...)
-        {
-            return 0;
-        }
-    }
-
-    ScopedInternetHandle session_;
-    std::string notion_token_;
-};
 
 class UploadFailure : public std::runtime_error
 {
