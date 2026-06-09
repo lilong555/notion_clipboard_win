@@ -5,11 +5,17 @@ if(NOT WIN32)
     message(FATAL_ERROR "notion_clipboard_win 是 Windows 原生程序，请在 Windows/MSVC 或 MinGW 环境中构建。")
 endif()
 
+enable_language(RC)
+
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(NOTION_CLIPBOARD_WIN_GUI "构建为无控制台窗口的后台程序" OFF)
+
+set(APP_ICON_PATH_RC "${CMAKE_CURRENT_SOURCE_DIR}/assets/app.ico")
+set(RESOURCE_HEADER_PATH_RC "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h")
+configure_file(src/app.rc.in "${CMAKE_CURRENT_BINARY_DIR}/app.rc" @ONLY)
 
 add_executable(notion_clipboard_win
     src/main.cpp
@@ -17,6 +23,7 @@ add_executable(notion_clipboard_win
     src/http_client.cpp
     src/json.cpp
     src/win_util.cpp
+    "${CMAKE_CURRENT_BINARY_DIR}/app.rc"
 )
 
 if(NOTION_CLIPBOARD_WIN_GUI)

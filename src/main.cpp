@@ -5,6 +5,7 @@
 #include "app_icon.h"
 #include "http_client.h"
 #include "json.h"
+#include "resource.h"
 #include "win_util.h"
 
 #include <algorithm>
@@ -59,6 +60,21 @@ constexpr UINT kMenuOpenLog = 3008;
 constexpr UINT kMenuOpenStateDir = 3009;
 constexpr UINT kMenuExit = 3010;
 constexpr const wchar_t *kAppDisplayName = L"Notion Clipboard Win";
+
+#ifndef NIF_SHOWTIP
+#define NIF_SHOWTIP 0x00000080
+#endif
+
+HICON LoadApplicationIcon(HINSTANCE instance, int width, int height)
+{
+    HICON icon = reinterpret_cast<HICON>(
+        LoadImageW(instance, MAKEINTRESOURCEW(IDI_APP_ICON), IMAGE_ICON, width, height, LR_DEFAULTCOLOR));
+    if (icon != nullptr)
+    {
+        return icon;
+    }
+    return CreateGeneratedAppIcon(width, height);
+}
 
 std::string Trim(const std::string &input)
 {
@@ -4234,8 +4250,8 @@ public:
         taskbar_created_message_ = RegisterWindowMessageW(L"TaskbarCreated");
 
         const HINSTANCE instance = GetModuleHandleW(nullptr);
-        app_icon_ = CreateGeneratedAppIcon(GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
-        tray_icon_ = CreateGeneratedAppIcon(GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
+        app_icon_ = LoadApplicationIcon(instance, GetSystemMetrics(SM_CXICON), GetSystemMetrics(SM_CYICON));
+        tray_icon_ = LoadApplicationIcon(instance, GetSystemMetrics(SM_CXSMICON), GetSystemMetrics(SM_CYSMICON));
 
         WNDCLASSEXW wc = {};
         wc.cbSize = sizeof(wc);
@@ -4411,7 +4427,7 @@ private:
         nid_.cbSize = sizeof(nid_);
         nid_.hWnd = hwnd_;
         nid_.uID = kTrayIconId;
-        nid_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP;
+        nid_.uFlags = NIF_MESSAGE | NIF_ICON | NIF_TIP | NIF_SHOWTIP;
         nid_.uCallbackMessage = kTrayCallbackMessage;
         nid_.hIcon =
             tray_icon_ != nullptr ? tray_icon_ : (app_icon_ != nullptr ? app_icon_ : LoadIconW(nullptr, IDI_APPLICATION));
