@@ -100,6 +100,11 @@ void ApplyConfigValue(AppConfig *config, const std::string &key, const std::stri
     {
         config->tray_notifications = ParseBool(trimmed_value);
     }
+    else if (normalized == "start_with_windows")
+    {
+        config->start_with_windows = ParseBool(trimmed_value);
+        config->start_with_windows_configured = true;
+    }
     else if (normalized == "debounce_ms")
     {
         config->debounce_ms = std::max(100, ParseIntOrDefault(trimmed_value, 750));

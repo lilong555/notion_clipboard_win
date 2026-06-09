@@ -10,6 +10,7 @@ A native Windows clipboard uploader for Notion. It runs as a background tray pro
 - Custom tray/window icon, with `Notion Clipboard Win` shown when hovering over the tray icon.
 - Tray menu hotkey recorder. The new hotkey is registered immediately and persisted to the config file.
 - Tray notification toggle. The setting is persisted through `tray_notifications`.
+- Optional start with Windows through the current user's Run registry key. No administrator permission is required.
 - Optional clipboard event listener through `AddClipboardFormatListener`; no polling.
 - Debounce and short duplicate suppression for clipboard event storms.
 - Persistent queue first, sequential background upload second.
@@ -159,6 +160,7 @@ Dry-run conversion for a file without using the clipboard or uploading:
 - Temporarily enable or pause the hotkey.
 - Record a new hotkey: confirm, press a new key combination, or press `Esc` to cancel. A successful recording is persisted and registered immediately.
 - Enable or disable tray notifications. The setting is persisted to `tray_notifications`.
+- Enable or disable start with Windows. The setting is persisted to `start_with_windows`.
 - Temporarily enable or pause automatic clipboard listening.
 - Open config, log, and state directory.
 - Exit.
@@ -178,7 +180,14 @@ hotkey=Ctrl+Shift+B
 enable_hotkey=true
 enable_clipboard_listener=false
 tray_notifications=true
+start_with_windows=false
 ```
+
+Start with Windows:
+
+- `start_with_windows=false`: disabled by default.
+- `start_with_windows=true`: when the tray process starts, it writes `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\NotionClipboardWin`.
+- The tray menu item updates both the registry entry and the config file.
 
 Peak control:
 

@@ -10,6 +10,7 @@ Windows 原生剪贴板上传工具。程序常驻后台托盘，按全局热键
 - 自定义托盘/窗口图标，鼠标悬停托盘图标时显示 `Notion Clipboard Win`。
 - 托盘菜单支持录制新热键，成功后立即重新注册并写回配置。
 - 可关闭托盘通知，设置会持久写回 `tray_notifications`。
+- 可选开机自动启动，使用当前用户的 Windows Run 注册表项，无需管理员权限。
 - 可选使用 `AddClipboardFormatListener` 监听剪贴板事件，不做轮询。
 - 自动监听模式支持 debounce 和短时间重复抑制，减少一次复制触发多次上传。
 - 先写入持久队列，再由后台线程顺序上传，断网或程序退出后可继续重试。
@@ -159,6 +160,7 @@ cmake --build build-console --config Release
 - 临时启用或暂停热键。
 - 录制新热键：确认后按新的组合键，`Esc` 取消；成功后会写回配置并立即重新注册。
 - 启用或关闭托盘通知，设置会写回 `tray_notifications`。
+- 启用或关闭开机自动启动，设置会写回 `start_with_windows`。
 - 临时启用或暂停自动监听剪贴板。
 - 打开配置、日志和状态目录。
 - 退出程序。
@@ -178,7 +180,14 @@ hotkey=Ctrl+Shift+B
 enable_hotkey=true
 enable_clipboard_listener=false
 tray_notifications=true
+start_with_windows=false
 ```
+
+开机自动启动：
+
+- `start_with_windows=false`：默认关闭。
+- `start_with_windows=true`：启动托盘进程时写入 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\NotionClipboardWin`。
+- 托盘菜单中的“开机自动启动”会同时更新注册表和配置文件。
 
 峰值控制：
 

@@ -20,6 +20,7 @@ configure_file(src/app.rc.in "${CMAKE_CURRENT_BINARY_DIR}/app.rc" @ONLY)
 add_executable(notion_clipboard_win
     src/main.cpp
     src/app_icon.cpp
+    src/autostart.cpp
     src/config.cpp
     src/converter.cpp
     src/hotkey.cpp

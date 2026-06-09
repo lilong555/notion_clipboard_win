@@ -2,6 +2,7 @@
 #include <shellapi.h>
 
 #include "app_icon.h"
+#include "autostart.h"
 #include "config.h"
 #include "converter.h"
 #include "hotkey.h"
@@ -57,6 +58,7 @@ using ncw::HtmlFragmentToMarkdown;
 using ncw::HotkeySpec;
 using ncw::HotkeySpecFromRecordedKey;
 using ncw::IsoUtcTimestampFromUnixMs;
+using ncw::IsAutoStartEnabled;
 using ncw::IsModifierVirtualKey;
 using ncw::Logger;
 using ncw::LoadConfig;
@@ -70,6 +72,7 @@ using ncw::ReadWholeFile;
 using ncw::RunDryRunText;
 using ncw::RunSelfTest;
 using ncw::SelectAppendBatchEnd;
+using ncw::SetAutoStartEnabled;
 using ncw::SummarizeForLog;
 using ncw::Trim;
 using ncw::TruncateUtf8;
@@ -90,11 +93,12 @@ constexpr UINT kMenuHotkeyStatus = 3002;
 constexpr UINT kMenuToggleHotkey = 3003;
 constexpr UINT kMenuRecordHotkey = 3004;
 constexpr UINT kMenuToggleNotifications = 3005;
-constexpr UINT kMenuToggleClipboardListener = 3006;
-constexpr UINT kMenuOpenConfig = 3007;
-constexpr UINT kMenuOpenLog = 3008;
-constexpr UINT kMenuOpenStateDir = 3009;
-constexpr UINT kMenuExit = 3010;
+constexpr UINT kMenuToggleAutoStart = 3006;
+constexpr UINT kMenuToggleClipboardListener = 3007;
+constexpr UINT kMenuOpenConfig = 3008;
+constexpr UINT kMenuOpenLog = 3009;
+constexpr UINT kMenuOpenStateDir = 3010;
+constexpr UINT kMenuExit = 3011;
 constexpr const wchar_t *kAppDisplayName = L"Notion Clipboard Win";
 
 #ifndef NIF_SHOWTIP
@@ -678,6 +682,8 @@ public:
           hotkey_spec_(ParseHotkeyOrThrow(config->hotkey)),
           hotkey_enabled_(config->enable_hotkey),
           notifications_enabled_(config->tray_notifications),
+          auto_start_enabled_(config->start_with_windows),
+          auto_start_configured_(config->start_with_windows_configured),
           clipboard_listener_enabled_(config->enable_clipboard_listener)
     {
     }
@@ -709,6 +715,7 @@ public:
         SendMessageW(hwnd_, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(wc.hIconSm));
 
         AddTrayIcon();
+        SyncAutoStartSetting();
         if (hotkey_enabled_)
         {
             hotkey_enabled_ = RegisterUploadHotkey();
@@ -992,6 +999,8 @@ private:
         AppendMenuW(menu, MF_STRING | (recording_hotkey_ ? MF_GRAYED : MF_ENABLED), kMenuRecordHotkey, L"录制热键...");
         AppendMenuW(menu, MF_STRING | (notifications_enabled_ ? MF_CHECKED : MF_UNCHECKED), kMenuToggleNotifications,
                     L"显示通知");
+        AppendMenuW(menu, MF_STRING | (auto_start_enabled_ ? MF_CHECKED : MF_UNCHECKED), kMenuToggleAutoStart,
+                    L"开机自动启动");
         AppendMenuW(menu, MF_STRING | (clipboard_listener_enabled_ ? MF_CHECKED : MF_UNCHECKED),
                     kMenuToggleClipboardListener, L"自动监听剪贴板");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -1023,6 +1032,9 @@ private:
             break;
         case kMenuToggleNotifications:
             ToggleNotifications();
+            break;
+        case kMenuToggleAutoStart:
+            ToggleAutoStart();
             break;
         case kMenuToggleClipboardListener:
             EnableClipboardListener(!clipboard_listener_enabled_);
@@ -1079,6 +1091,33 @@ private:
                 logger_->Warn("写入配置失败: " + key + "=" + value + "，原因: " + std::string(ex.what()));
             }
             return false;
+        }
+    }
+
+    void SyncAutoStartSetting()
+    {
+        if (!auto_start_configured_)
+        {
+            auto_start_enabled_ = IsAutoStartEnabled(config_path_);
+            return;
+        }
+
+        std::string error;
+        if (!SetAutoStartEnabled(auto_start_enabled_, config_path_, &error))
+        {
+            auto_start_enabled_ = IsAutoStartEnabled(config_path_);
+            if (logger_ != nullptr)
+            {
+                logger_->Warn(error);
+            }
+            ShowNotification(L"Notion Clipboard Win", L"同步开机自动启动设置失败，请查看日志。");
+            return;
+        }
+
+        auto_start_enabled_ = IsAutoStartEnabled(config_path_);
+        if (logger_ != nullptr)
+        {
+            logger_->Info(std::string("开机自动启动已同步: ") + (auto_start_enabled_ ? "on" : "off"));
         }
     }
 
@@ -1209,6 +1248,31 @@ private:
         }
     }
 
+    void ToggleAutoStart()
+    {
+        const bool next_enabled = !auto_start_enabled_;
+        std::string error;
+        if (!SetAutoStartEnabled(next_enabled, config_path_, &error))
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Error(error);
+            }
+            ShowNotification(L"Notion Clipboard Win", L"更新开机自动启动失败，请查看日志。");
+            return;
+        }
+
+        auto_start_enabled_ = next_enabled;
+        auto_start_configured_ = true;
+        PersistConfigValue("start_with_windows", auto_start_enabled_ ? "true" : "false");
+        if (logger_ != nullptr)
+        {
+            logger_->Info(std::string("开机自动启动已") + (auto_start_enabled_ ? "启用" : "关闭"));
+        }
+        ShowNotification(L"Notion Clipboard Win",
+                         auto_start_enabled_ ? L"开机自动启动已启用。" : L"开机自动启动已关闭。");
+    }
+
     void OpenConfig()
     {
         if (!fs::exists(config_path_))
@@ -1226,7 +1290,8 @@ private:
                                              "hotkey=Ctrl+Shift+B\n"
                                              "enable_hotkey=true\n"
                                              "enable_clipboard_listener=false\n"
-                                             "tray_notifications=true\n");
+                                             "tray_notifications=true\n"
+                                             "start_with_windows=false\n");
             }
             catch (const std::exception &ex)
             {
@@ -1353,6 +1418,8 @@ private:
     bool hotkey_enabled_ = true;
     bool hotkey_registered_ = false;
     bool notifications_enabled_ = true;
+    bool auto_start_enabled_ = false;
+    bool auto_start_configured_ = false;
     bool clipboard_listener_enabled_ = false;
     bool clipboard_listener_registered_ = false;
     bool tray_icon_added_ = false;
