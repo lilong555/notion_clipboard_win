@@ -119,6 +119,12 @@ enable_clipboard_listener=true
 .\build-console\Release\notion_clipboard_win.exe --self-test
 ```
 
+对指定文件做转换统计，不依赖剪贴板，也不会上传：
+
+```powershell
+.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
+```
+
 ## 数据落盘
 
 默认状态目录：
@@ -165,7 +171,7 @@ enable_clipboard_listener=true
 - fenced code block、标题、列表、任务列表、引用块会映射到对应 Notion block。
 - Markdown 表格暂时保守上传为 `plain text` 代码块，避免复杂表格在 Notion API 中被错误拆分。
 
-本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、`text`/未知代码语言降级、Markdown/LaTeX、任务列表、引用块、表格保守保留、多行内公式拆分、超长代码块拆分、超长公式降级、货币 `$` 误判、HTML 数字实体和 append 请求体切分。
+本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、`text`/未知代码语言降级、Markdown/LaTeX、任务列表、引用块、表格保守保留、多行内公式拆分、超长代码块拆分、超长公式降级、货币 `$` 误判、inline code 中的 `$`、Windows 路径、HTML 数字实体、script/style 污染和 append 请求体切分。
 
 ## 可靠性说明
 

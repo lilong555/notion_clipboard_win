@@ -1483,6 +1483,7 @@ AppConfig LoadConfig(const fs::path &path)
 struct CliOptions
 {
     fs::path config_path = DefaultConfigPath();
+    fs::path dry_run_file_path;
     bool once = false;
     bool validate_config = false;
     bool dry_run = false;
@@ -1511,6 +1512,15 @@ CliOptions ParseCli(int argc, wchar_t **argv)
         else if (arg == L"--dry-run")
         {
             options.dry_run = true;
+        }
+        else if (arg == L"--dry-run-file")
+        {
+            if (i + 1 >= argc)
+            {
+                throw std::runtime_error("--dry-run-file 缺少路径");
+            }
+            options.dry_run = true;
+            options.dry_run_file_path = fs::path(argv[++i]);
         }
         else if (arg == L"--self-test")
         {
@@ -1541,6 +1551,7 @@ void PrintHelp()
               << "  notion_clipboard_win.exe --validate-config            验证 Notion 配置\n"
               << "  notion_clipboard_win.exe --dry-run --once             读取剪贴板但不上传\n\n"
               << "  notion_clipboard_win.exe --self-test                  运行本地转换回归测试\n\n"
+              << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不上传\n\n"
               << "默认热键:\n"
               << "  Ctrl+Shift+B\n\n"
               << "配置默认路径:\n"
@@ -2967,6 +2978,7 @@ bool HasEmptyMarkdownCodeFenceArtifact(const std::string &text)
 std::string HtmlFragmentToMarkdown(std::string html)
 {
     html = NormalizeLineEndings(std::move(html));
+    const std::string lower_html = ToLowerAscii(html);
     std::string output;
     output.reserve(std::min<std::size_t>(html.size(), 262144));
 
@@ -2999,9 +3011,9 @@ std::string HtmlFragmentToMarkdown(std::string html)
             continue;
         }
 
-        if (html.compare(i, 4, "<!--") == 0)
+        if (lower_html.compare(i, 4, "<!--") == 0)
         {
-            const std::size_t end = html.find("-->", i + 4);
+            const std::size_t end = lower_html.find("-->", i + 4);
             i = (end == std::string::npos) ? html.size() : end + 3;
             continue;
         }
@@ -3020,6 +3032,14 @@ std::string HtmlFragmentToMarkdown(std::string html)
         }
         const std::size_t space = tag.find_first_of(" \t\r\n/");
         const std::string name = space == std::string::npos ? tag : tag.substr(0, space);
+
+        if (!closing && (name == "script" || name == "style" || name == "head" || name == "svg"))
+        {
+            const std::string close_tag = "</" + name + ">";
+            const std::size_t close_pos = lower_html.find(close_tag, end + 1);
+            i = (close_pos == std::string::npos) ? html.size() : close_pos + close_tag.size();
+            continue;
+        }
 
         if (!closing && (name == "h1" || name == "h2" || name == "h3"))
         {
@@ -3372,6 +3392,24 @@ int RunSelfTest()
          0,
          {},
          {"&#x03b1;", "&#946;", "&lt;"}},
+        {"inline code escaped dollars and paths",
+         "Windows 路径 `E:\\code\\notion\\file.txt`，价格 \\$100，代码 `$not_formula$`，公式 $x+1$。",
+         "Windows 路径 E:\\code\\notion\\file.txt，价格 \\$100，代码 $not_formula$，公式 $x+1$。",
+         1,
+         0,
+         0,
+         0,
+         {"\"code\":true", "\"expression\":\"x+1\""},
+         {"\"expression\":\"not_formula\""}},
+        {"html script style pollution skipped",
+         HtmlFragmentToMarkdown("<style>.x{color:red}</style><script>window.bad='$x$';</script><p>正文 $y$</p>"),
+         "正文 $y$",
+         1,
+         0,
+         0,
+         0,
+         {"\"expression\":\"y\""},
+         {"window.bad", ".x{color:red}", "\"expression\":\"x\""}},
     };
 
     bool ok = true;
@@ -3404,6 +3442,23 @@ int RunSelfTest()
     }
     std::cout << (ok ? "self-test passed\n" : "self-test failed\n");
     return ok ? 0 : 1;
+}
+
+int RunDryRunText(const std::string &text)
+{
+    const std::string normalized = Trim(NormalizeLineEndings(text));
+    if (normalized.empty())
+    {
+        throw std::runtime_error("输入文件没有可转换的文本");
+    }
+
+    const std::vector<std::string> blocks = BuildTextBlocks(normalized);
+    const std::size_t equation_count = CountOccurrencesInBlocks(blocks, "\"type\":\"equation\"");
+    const std::size_t code_count = CountBlocksContaining(blocks, "\"type\":\"code\"");
+    std::cout << "dry-run: title=" << BuildTitleFromContent(normalized) << "，bytes=" << normalized.size()
+              << "，blocks=" << blocks.size() << "，equations=" << equation_count
+              << "，code_blocks=" << code_count << "\n";
+    return 0;
 }
 
 struct UploadJob
@@ -4772,6 +4827,10 @@ int AppMain(int argc, wchar_t **argv)
     if (cli.self_test)
     {
         return RunSelfTest();
+    }
+    if (!cli.dry_run_file_path.empty())
+    {
+        return RunDryRunText(ReadWholeFile(cli.dry_run_file_path));
     }
 
     AppConfig config = LoadConfig(cli.config_path);

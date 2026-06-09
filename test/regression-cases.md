@@ -79,3 +79,14 @@ Expected:
 
 - Currency-style `$` text is not treated as an equation.
 - HTML decimal and hexadecimal numeric entities are decoded before conversion.
+- Inline code containing `$...$` stays code text rather than becoming an equation.
+- Windows paths stay plain text.
+
+## HTML Non-Content Tags
+
+Copied HTML fragments may include style, script, head, or svg content.
+
+Expected:
+
+- Non-content tag bodies are skipped.
+- Script/style text is not uploaded and does not become the page title.
