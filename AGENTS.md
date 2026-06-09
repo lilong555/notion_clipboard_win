@@ -1,0 +1,21 @@
+# Repository Guidelines
+
+## 语言与风格
+
+- 与用户沟通使用中文。
+- 代码注释使用中文，保持简短，只解释不明显的设计意图。
+- C++ 代码保持 C++17，优先使用标准库和 Win32/WinHTTP，不引入第三方依赖。
+
+## 构建
+
+- Windows/MSVC：
+  - `cmake -S . -B build`
+  - `cmake --build build --config Release`
+- 无控制台后台版：
+  - `cmake -S . -B build -DNOTION_CLIPBOARD_WIN_GUI=ON`
+  - `cmake --build build --config Release`
+
+## 安全
+
+- 不要提交真实 Notion token、数据库 ID 或本地配置文件。
+- `notion_clipboard_win.ini`、日志和队列状态都应保持本地。

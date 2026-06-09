@@ -1,0 +1,8 @@
+build/
+build-console/
+out/
+*.user
+*.log
+*.exe
+notion_clipboard_win.ini
+state/
