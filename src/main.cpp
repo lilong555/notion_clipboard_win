@@ -3067,6 +3067,12 @@ std::string CompactMarkdownNewlines(const std::string &text)
     return Trim(output);
 }
 
+bool ContainsNonWhitespace(const std::string &text)
+{
+    return std::any_of(text.begin(), text.end(), [](unsigned char ch)
+                       { return std::isspace(ch) == 0; });
+}
+
 bool IsMarkdownFenceLine(const std::string &line)
 {
     const std::string trimmed = Trim(line);
@@ -3284,6 +3290,8 @@ std::string HtmlFragmentToMarkdown(std::string html)
     std::string output;
     output.reserve(std::min<std::size_t>(html.size(), 262144));
     int pre_depth = 0;
+    int li_depth = 0;
+    bool just_started_li = false;
 
     auto append_break = [&](int count)
     {
@@ -3307,6 +3315,7 @@ std::string HtmlFragmentToMarkdown(std::string html)
         {
             return;
         }
+        just_started_li = false;
         if (display)
         {
             append_break(2);
@@ -3328,7 +3337,13 @@ std::string HtmlFragmentToMarkdown(std::string html)
         if (html[i] != '<')
         {
             const std::size_t next = html.find('<', i);
-            output += DecodeHtmlEntities(html.substr(i, next == std::string::npos ? std::string::npos : next - i));
+            const std::string decoded =
+                DecodeHtmlEntities(html.substr(i, next == std::string::npos ? std::string::npos : next - i));
+            if (ContainsNonWhitespace(decoded))
+            {
+                just_started_li = false;
+            }
+            output += decoded;
             if (next == std::string::npos)
             {
                 break;
@@ -3365,6 +3380,7 @@ std::string HtmlFragmentToMarkdown(std::string html)
             if (close_pos != std::string::npos)
             {
                 output += BuildMarkdownInlineCode(html.substr(end + 1, close_pos - end - 1));
+                just_started_li = false;
                 i = close_pos + std::strlen("</code>");
                 continue;
             }
@@ -3415,8 +3431,10 @@ std::string HtmlFragmentToMarkdown(std::string html)
         }
         else if (!closing && name == "li")
         {
+            ++li_depth;
             append_break(1);
             output += "- ";
+            just_started_li = true;
         }
         else if (!closing && name == "br")
         {
@@ -3440,12 +3458,24 @@ std::string HtmlFragmentToMarkdown(std::string html)
         }
         else if (!closing && (name == "p" || name == "div" || name == "section" || name == "article"))
         {
+            if (!(li_depth > 0 && just_started_li))
+            {
+                append_break(2);
+            }
+        }
+        else if (closing && name == "li")
+        {
+            if (li_depth > 0)
+            {
+                --li_depth;
+            }
+            just_started_li = false;
             append_break(2);
         }
         else if (closing && (name == "p" || name == "div" || name == "section" || name == "article" ||
-                             name == "h1" || name == "h2" || name == "h3" || name == "li"))
+                             name == "h1" || name == "h2" || name == "h3"))
         {
-            append_break(2);
+            append_break(li_depth > 0 ? 1 : 2);
         }
         else if (!closing && (name == "td" || name == "th"))
         {
@@ -3860,6 +3890,26 @@ int RunSelfTest()
     for (const ConversionTestCase &test : tests)
     {
         ok = RunConversionTest(test) && ok;
+    }
+
+    const std::string html_list_markdown = HtmlFragmentToMarkdown(
+        "<ul>"
+        "<li><p><code>state</code> 表示当前已经匹配了 <code>t</code> 的前 <code>state</code> 个字符；</p></li>"
+        "<li><p>读入字符 <code>c</code> 后，转移到 <code>go[state][c]</code>；</p></li>"
+        "<li><p>如果转移后 <code>state == m</code>，说明有一个 <code>t</code> 在当前位置结尾。</p></li>"
+        "</ul>");
+    const std::vector<std::string> html_list_blocks = BuildTextBlocks(html_list_markdown);
+    if (html_list_markdown.find("- `state` 表示当前已经匹配了") == std::string::npos ||
+        html_list_markdown.find("-\n\n`state`") != std::string::npos ||
+        CountBlocksContaining(html_list_blocks, "\"type\":\"bulleted_list_item\"") != 3)
+    {
+        std::cout << "[FAIL] html list paragraph keeps marker with content\n";
+        std::cout << "       converted=" << html_list_markdown << "\n";
+        ok = false;
+    }
+    else
+    {
+        std::cout << "[PASS] html list paragraph keeps marker with content\n";
     }
 
     std::vector<std::string> payload_blocks;

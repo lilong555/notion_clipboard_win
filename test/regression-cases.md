@@ -120,3 +120,12 @@ Expected:
 
 - Empty fenced code blocks do not produce empty Notion code blocks.
 - A code line like ```` ``` not a close ```` does not close the current fenced block.
+
+## HTML List Paragraphs
+
+Rich clipboard HTML commonly wraps list item content as `<li><p>...</p></li>`.
+
+Expected:
+
+- The list marker and first paragraph text stay on the same Markdown line.
+- HTML inline code inside list items stays inline and does not split the list item.
