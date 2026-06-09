@@ -1027,6 +1027,40 @@ std::string CollapseWhitespace(const std::string &text)
 }
 
 void ReplaceAllInPlace(std::string *text, const std::string &from, const std::string &to);
+std::size_t CountRepeatedChar(const std::string &text, std::size_t pos, char ch);
+std::size_t FindRepeatedCharRun(const std::string &text, std::size_t pos, char ch, std::size_t run_len);
+
+std::string StripInlineCodeDelimitersForTitle(const std::string &line)
+{
+    std::string output;
+    output.reserve(line.size());
+    for (std::size_t i = 0; i < line.size();)
+    {
+        if (line[i] != '`')
+        {
+            output.push_back(line[i++]);
+            continue;
+        }
+
+        const std::size_t run_len = CountRepeatedChar(line, i, '`');
+        const std::size_t close = FindRepeatedCharRun(line, i + run_len, '`', run_len);
+        if (close == std::string::npos)
+        {
+            i += run_len;
+            continue;
+        }
+        output += line.substr(i + run_len, close - i - run_len);
+        i = close + run_len;
+    }
+    return output;
+}
+
+std::string StripTitleMarkdownMarkers(std::string line)
+{
+    ReplaceAllInPlace(&line, "**", "");
+    ReplaceAllInPlace(&line, "__", "");
+    return StripInlineCodeDelimitersForTitle(line);
+}
 
 std::string StripTitleMarkdownPrefix(std::string line)
 {
@@ -1044,10 +1078,7 @@ std::string StripTitleMarkdownPrefix(std::string line)
     if (hashes > 0 && hashes < line.size() && std::isspace(static_cast<unsigned char>(line[hashes])))
     {
         line = Trim(line.substr(hashes));
-        ReplaceAllInPlace(&line, "**", "");
-        ReplaceAllInPlace(&line, "__", "");
-        ReplaceAllInPlace(&line, "`", "");
-        return line;
+        return StripTitleMarkdownMarkers(line);
     }
 
     if (line.size() >= 6 && (line[0] == '-' || line[0] == '*' || line[0] == '+') &&
@@ -1055,29 +1086,20 @@ std::string StripTitleMarkdownPrefix(std::string line)
         std::isspace(static_cast<unsigned char>(line[5])))
     {
         line = Trim(line.substr(6));
-        ReplaceAllInPlace(&line, "**", "");
-        ReplaceAllInPlace(&line, "__", "");
-        ReplaceAllInPlace(&line, "`", "");
-        return line;
+        return StripTitleMarkdownMarkers(line);
     }
 
     if (line.size() >= 2 && (line[0] == '-' || line[0] == '*' || line[0] == '+') &&
         std::isspace(static_cast<unsigned char>(line[1])))
     {
         line = Trim(line.substr(2));
-        ReplaceAllInPlace(&line, "**", "");
-        ReplaceAllInPlace(&line, "__", "");
-        ReplaceAllInPlace(&line, "`", "");
-        return line;
+        return StripTitleMarkdownMarkers(line);
     }
 
     if (line.size() >= 2 && line[0] == '>' && std::isspace(static_cast<unsigned char>(line[1])))
     {
         line = Trim(line.substr(2));
-        ReplaceAllInPlace(&line, "**", "");
-        ReplaceAllInPlace(&line, "__", "");
-        ReplaceAllInPlace(&line, "`", "");
-        return line;
+        return StripTitleMarkdownMarkers(line);
     }
 
     std::size_t digits = 0;
@@ -1089,16 +1111,10 @@ std::string StripTitleMarkdownPrefix(std::string line)
         std::isspace(static_cast<unsigned char>(line[digits + 1])))
     {
         line = Trim(line.substr(digits + 2));
-        ReplaceAllInPlace(&line, "**", "");
-        ReplaceAllInPlace(&line, "__", "");
-        ReplaceAllInPlace(&line, "`", "");
-        return line;
+        return StripTitleMarkdownMarkers(line);
     }
 
-    ReplaceAllInPlace(&line, "**", "");
-    ReplaceAllInPlace(&line, "__", "");
-    ReplaceAllInPlace(&line, "`", "");
-    return line;
+    return StripTitleMarkdownMarkers(line);
 }
 
 std::string BuildTitleFromContent(const std::string &content)
@@ -1841,6 +1857,21 @@ bool StartsWithFence(const std::string &line, char *fence_char, std::size_t *fen
     return true;
 }
 
+bool IsClosingFenceLine(const std::string &line, char fence_char, std::size_t fence_len)
+{
+    const std::string trimmed_left = TrimLeft(line);
+    if (trimmed_left.empty() || trimmed_left[0] != fence_char)
+    {
+        return false;
+    }
+    std::size_t close_len = 0;
+    while (close_len < trimmed_left.size() && trimmed_left[close_len] == fence_char)
+    {
+        ++close_len;
+    }
+    return close_len >= fence_len && Trim(trimmed_left.substr(close_len)).empty();
+}
+
 bool IsAsciiAlpha(char ch)
 {
     return std::isalpha(static_cast<unsigned char>(ch)) != 0;
@@ -1849,6 +1880,11 @@ bool IsAsciiAlpha(char ch)
 bool IsAsciiAlnum(char ch)
 {
     return std::isalnum(static_cast<unsigned char>(ch)) != 0;
+}
+
+bool IsAsciiSpace(char ch)
+{
+    return std::isspace(static_cast<unsigned char>(ch)) != 0;
 }
 
 bool ShouldInsertLatexBackslash(const std::string &token)
@@ -1862,6 +1898,34 @@ bool ShouldInsertLatexBackslash(const std::string &token)
         "Delta", "epsilon", "eta", "rho", "sigma", "Sigma", "omega", "Omega",
     };
     return std::find(known_commands.begin(), known_commands.end(), token) != known_commands.end();
+}
+
+std::size_t CountRepeatedChar(const std::string &text, std::size_t pos, char ch)
+{
+    std::size_t count = 0;
+    while (pos + count < text.size() && text[pos + count] == ch)
+    {
+        ++count;
+    }
+    return count;
+}
+
+std::size_t FindRepeatedCharRun(const std::string &text, std::size_t pos, char ch, std::size_t run_len)
+{
+    while (pos < text.size())
+    {
+        const std::size_t found = text.find(ch, pos);
+        if (found == std::string::npos)
+        {
+            return std::string::npos;
+        }
+        if (CountRepeatedChar(text, found, ch) == run_len)
+        {
+            return found;
+        }
+        pos = found + 1;
+    }
+    return std::string::npos;
 }
 
 std::string InsertMissingLatexBackslashes(const std::string &expression)
@@ -2153,6 +2217,101 @@ bool IsParagraphBoundary(const std::string &line)
            StartsWithFence(line, &fence_char, &fence_len);
 }
 
+bool HasKnownMathUtf8Symbol(const std::string &text)
+{
+    static const std::vector<std::string> symbols = {
+        "−", "×", "÷", "·", "∈", "∉", "≤", "≥", "≠", "≈", "∞", "∂", "∇", "∑", "∏",
+        "∫", "√", "α", "β", "γ", "λ", "μ", "π", "φ", "Φ", "θ", "ω", "Ω", "Δ",
+    };
+    return std::any_of(symbols.begin(), symbols.end(), [&](const std::string &symbol)
+                       { return text.find(symbol) != std::string::npos; });
+}
+
+bool LooksLikeInlineLatexExpression(const std::string &expression)
+{
+    const std::string trimmed = Trim(expression);
+    if (trimmed.empty())
+    {
+        return false;
+    }
+    if (HasKnownMathUtf8Symbol(trimmed))
+    {
+        return true;
+    }
+
+    bool has_ascii_letter = false;
+    bool has_lower = false;
+    bool has_non_alpha = false;
+    std::string alpha_token;
+    for (unsigned char ch : trimmed)
+    {
+        if (std::isdigit(ch) || ch == '\\' || ch == '^' || ch == '_' || ch == '=' || ch == '+' || ch == '-' ||
+            ch == '*' || ch == '/' || ch == '<' || ch == '>' || ch == '{' || ch == '}' || ch == '[' ||
+            ch == ']' || ch == '(' || ch == ')' || ch == ',' || ch == '.')
+        {
+            return true;
+        }
+        if (std::isalpha(ch))
+        {
+            has_ascii_letter = true;
+            has_lower = has_lower || std::islower(ch) != 0;
+            alpha_token.push_back(static_cast<char>(ch));
+            continue;
+        }
+        if (!std::isspace(ch))
+        {
+            has_non_alpha = true;
+        }
+    }
+
+    if (!has_non_alpha && has_ascii_letter)
+    {
+        if (alpha_token.size() == 1 || (has_lower && alpha_token.size() <= 3))
+        {
+            return true;
+        }
+        if (has_lower && ShouldInsertLatexBackslash(alpha_token))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool IsInlineDollarOpenAllowed(const std::string &text, std::size_t pos)
+{
+    if (pos + 1 >= text.size() || IsAsciiSpace(text[pos + 1]))
+    {
+        return false;
+    }
+    if (pos > 0)
+    {
+        const char prev = text[pos - 1];
+        if (IsAsciiAlnum(prev) || prev == '/' || prev == '\\')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool IsInlineDollarCloseAllowed(const std::string &text, std::size_t pos)
+{
+    if (pos == 0 || IsAsciiSpace(text[pos - 1]))
+    {
+        return false;
+    }
+    if (pos + 1 < text.size())
+    {
+        const char next = text[pos + 1];
+        if (IsAsciiAlnum(next) || next == '/' || next == '\\')
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 std::vector<InlineSegment> ParseInlineMarkdown(const std::string &text)
 {
     std::vector<InlineSegment> segments;
@@ -2184,11 +2343,12 @@ std::vector<InlineSegment> ParseInlineMarkdown(const std::string &text)
         }
         if (text[i] == '`')
         {
-            const std::size_t close = text.find('`', i + 1);
+            const std::size_t run_len = CountRepeatedChar(text, i, '`');
+            const std::size_t close = FindRepeatedCharRun(text, i + run_len, '`', run_len);
             if (close != std::string::npos)
             {
-                push_text(text.substr(i + 1, close - i - 1), true);
-                i = close + 1;
+                push_text(text.substr(i + run_len, close - i - run_len), true);
+                i = close + run_len;
                 continue;
             }
         }
@@ -2199,22 +2359,35 @@ std::vector<InlineSegment> ParseInlineMarkdown(const std::string &text)
             {
                 return false;
             }
-            if (open == "$" && (i + 1 >= text.size() || std::isspace(static_cast<unsigned char>(text[i + 1]))))
+            if (open == "$" && !IsInlineDollarOpenAllowed(text, i))
             {
                 return false;
             }
-            const std::size_t close_pos = text.find(close, i + open.size());
-            if (close_pos == std::string::npos || IsEscaped(text, close_pos))
+
+            std::size_t close_pos = std::string::npos;
+            std::size_t search = i + open.size();
+            while (search < text.size())
+            {
+                const std::size_t candidate = text.find(close, search);
+                if (candidate == std::string::npos)
+                {
+                    break;
+                }
+                if (!IsEscaped(text, candidate) &&
+                    (open != "$" || IsInlineDollarCloseAllowed(text, candidate)))
+                {
+                    close_pos = candidate;
+                    break;
+                }
+                search = candidate + close.size();
+            }
+            if (close_pos == std::string::npos)
             {
                 return false;
             }
-            if (open == "$" && close_pos > i + 1 &&
-                std::isspace(static_cast<unsigned char>(text[close_pos - 1])))
-            {
-                return false;
-            }
+
             const std::string expr = text.substr(i + open.size(), close_pos - i - open.size());
-            if (Trim(expr).empty())
+            if (Trim(expr).empty() || (open == "$" && !LooksLikeInlineLatexExpression(expr)))
             {
                 return false;
             }
@@ -2303,10 +2476,7 @@ std::vector<MarkdownBlock> ParseMarkdownBlocks(const std::string &content)
             std::string code;
             while (i < lines.size())
             {
-                char close_char = '\0';
-                std::size_t close_len = 0;
-                if (StartsWithFence(lines[i], &close_char, &close_len) && close_char == fence_char &&
-                    close_len >= fence_len)
+                if (IsClosingFenceLine(lines[i], fence_char, fence_len))
                 {
                     ++i;
                     break;
@@ -2975,12 +3145,145 @@ bool HasEmptyMarkdownCodeFenceArtifact(const std::string &text)
     return false;
 }
 
+std::string DecodeHtmlTextWithoutTags(const std::string &html)
+{
+    std::string output;
+    output.reserve(html.size());
+    for (std::size_t i = 0; i < html.size();)
+    {
+        if (html[i] != '<')
+        {
+            const std::size_t next = html.find('<', i);
+            output += DecodeHtmlEntities(html.substr(i, next == std::string::npos ? std::string::npos : next - i));
+            if (next == std::string::npos)
+            {
+                break;
+            }
+            i = next;
+            continue;
+        }
+        const std::size_t end = html.find('>', i + 1);
+        if (end == std::string::npos)
+        {
+            break;
+        }
+        i = end + 1;
+    }
+    return output;
+}
+
+std::string BuildMarkdownInlineCode(std::string code)
+{
+    code = DecodeHtmlTextWithoutTags(std::move(code));
+    std::size_t max_run = 0;
+    for (std::size_t i = 0; i < code.size();)
+    {
+        if (code[i] != '`')
+        {
+            ++i;
+            continue;
+        }
+        const std::size_t run = CountRepeatedChar(code, i, '`');
+        max_run = std::max(max_run, run);
+        i += run;
+    }
+    const std::string fence(max_run + 1, '`');
+    return fence + code + fence;
+}
+
+std::optional<std::pair<std::size_t, std::size_t>> FindMatchingHtmlEnd(const std::string &lower_html,
+                                                                       std::size_t open_tag_start,
+                                                                       std::size_t open_tag_end,
+                                                                       const std::string &tag_name)
+{
+    int depth = 1;
+    for (std::size_t pos = open_tag_end + 1; pos < lower_html.size();)
+    {
+        const std::size_t tag_start = lower_html.find('<', pos);
+        if (tag_start == std::string::npos)
+        {
+            break;
+        }
+        if (lower_html.compare(tag_start, 4, "<!--") == 0)
+        {
+            const std::size_t comment_end = lower_html.find("-->", tag_start + 4);
+            pos = (comment_end == std::string::npos) ? lower_html.size() : comment_end + 3;
+            continue;
+        }
+
+        const std::size_t tag_end = lower_html.find('>', tag_start + 1);
+        if (tag_end == std::string::npos)
+        {
+            break;
+        }
+
+        std::string tag = Trim(lower_html.substr(tag_start + 1, tag_end - tag_start - 1));
+        const bool closing = !tag.empty() && tag[0] == '/';
+        if (closing)
+        {
+            tag = Trim(tag.substr(1));
+        }
+        const bool self_closing = !tag.empty() && tag.back() == '/';
+        const std::size_t space = tag.find_first_of(" \t\r\n/");
+        const std::string name = space == std::string::npos ? tag : tag.substr(0, space);
+        if (name == tag_name)
+        {
+            if (closing)
+            {
+                --depth;
+                if (depth == 0)
+                {
+                    return std::make_pair(tag_start, tag_end + 1);
+                }
+            }
+            else if (!self_closing)
+            {
+                ++depth;
+            }
+        }
+        pos = tag_end + 1;
+    }
+    (void)open_tag_start;
+    return std::nullopt;
+}
+
+std::optional<std::string> ExtractTexAnnotation(const std::string &html)
+{
+    const std::string lower_html = ToLowerAscii(html);
+    std::size_t pos = 0;
+    while ((pos = lower_html.find("<annotation", pos)) != std::string::npos)
+    {
+        const std::size_t tag_end = lower_html.find('>', pos + 1);
+        if (tag_end == std::string::npos)
+        {
+            return std::nullopt;
+        }
+        const std::string tag = lower_html.substr(pos + 1, tag_end - pos - 1);
+        const std::size_t close = lower_html.find("</annotation>", tag_end + 1);
+        if (close == std::string::npos)
+        {
+            return std::nullopt;
+        }
+        if (tag.find("application/x-tex") != std::string::npos || tag.find("math/tex") != std::string::npos)
+        {
+            const std::string tex = Trim(DecodeHtmlTextWithoutTags(html.substr(tag_end + 1, close - tag_end - 1)));
+            if (!tex.empty())
+            {
+                return tex;
+            }
+        }
+        pos = close + std::strlen("</annotation>");
+    }
+    return std::nullopt;
+}
+
 std::string HtmlFragmentToMarkdown(std::string html)
 {
     html = NormalizeLineEndings(std::move(html));
     const std::string lower_html = ToLowerAscii(html);
     std::string output;
     output.reserve(std::min<std::size_t>(html.size(), 262144));
+    int pre_depth = 0;
 
     auto append_break = [&](int count)
     {
@@ -2995,6 +3298,29 @@ std::string HtmlFragmentToMarkdown(std::string html)
                 output.push_back('\n');
             }
         }
+    };
+
+    auto append_math = [&](const std::string &tex, bool display)
+    {
+        const std::string trimmed_tex = Trim(tex);
+        if (trimmed_tex.empty())
+        {
+            return;
+        }
+        if (display)
+        {
+            append_break(2);
+            output += "$$\n";
+            output += trimmed_tex;
+            output += "\n$$";
+            append_break(2);
+            return;
+        }
+        if (!output.empty() && output.back() != '\n' && output.back() != ' ')
+        {
+            output.push_back(' ');
+        }
+        output += "$" + trimmed_tex + "$";
     };
 
     for (std::size_t i = 0; i < html.size();)
@@ -3033,7 +3359,48 @@ std::string HtmlFragmentToMarkdown(std::string html)
         const std::size_t space = tag.find_first_of(" \t\r\n/");
         const std::string name = space == std::string::npos ? tag : tag.substr(0, space);
 
-        if (!closing && (name == "script" || name == "style" || name == "head" || name == "svg"))
+        if (!closing && name == "code" && pre_depth == 0)
+        {
+            const std::size_t close_pos = lower_html.find("</code>", end + 1);
+            if (close_pos != std::string::npos)
+            {
+                output += BuildMarkdownInlineCode(html.substr(end + 1, close_pos - end - 1));
+                i = close_pos + std::strlen("</code>");
+                continue;
+            }
+        }
+
+        if (!closing && name == "script" && tag.find("math/tex") != std::string::npos)
+        {
+            const std::size_t close_pos = lower_html.find("</script>", end + 1);
+            if (close_pos != std::string::npos)
+            {
+                append_math(DecodeHtmlTextWithoutTags(html.substr(end + 1, close_pos - end - 1)),
+                            tag.find("mode=display") != std::string::npos || tag.find("display") != std::string::npos);
+                i = close_pos + std::strlen("</script>");
+                continue;
+            }
+        }
+
+        if (!closing && ((name == "span" && tag.find("katex") != std::string::npos) ||
+                         name == "mjx-container" || name == "math"))
+        {
+            const auto match = FindMatchingHtmlEnd(lower_html, i, end, name);
+            if (match.has_value())
+            {
+                const std::string fragment = html.substr(i, match->second - i);
+                const auto tex = ExtractTexAnnotation(fragment);
+                if (tex.has_value())
+                {
+                    append_math(*tex, tag.find("display") != std::string::npos);
+                }
+                i = match->second;
+                continue;
+            }
+        }
+
+        if (!closing && (name == "script" || name == "style" || name == "head" || name == "svg" ||
+                         name == "noscript" || name == "template" || name == "canvas"))
         {
             const std::string close_tag = "</" + name + ">";
             const std::size_t close_pos = lower_html.find(close_tag, end + 1);
@@ -3057,11 +3424,16 @@ std::string HtmlFragmentToMarkdown(std::string html)
         }
         else if (!closing && name == "pre")
         {
+            ++pre_depth;
             append_break(2);
             output += "```\n";
         }
         else if (closing && name == "pre")
         {
+            if (pre_depth > 0)
+            {
+                --pre_depth;
+            }
             append_break(1);
             output += "```";
             append_break(2);
@@ -3410,6 +3782,78 @@ int RunSelfTest()
          0,
          {"\"expression\":\"y\""},
          {"window.bad", ".x{color:red}", "\"expression\":\"x\""}},
+        {"html inline code protects dollar math",
+         HtmlFragmentToMarkdown("<p>环境变量 <code>$HOME$</code>，公式 <span>\\(x+1\\)</span></p>"),
+         "环境变量 $HOME$，公式 \\(x+1\\)",
+         1,
+         0,
+         0,
+         0,
+         {"\"code\":true", "\"expression\":\"x+1\""},
+         {"\"expression\":\"HOME\""}},
+        {"url dollar segments are not equations",
+         "下载链接 https://example.com/$metadata/$value?x=1，公式 $x+1$。",
+         "下载链接 https://example.com/$metadata/$value?x=1，公式 $x+1$。",
+         1,
+         0,
+         0,
+         0,
+         {"\"expression\":\"x+1\""},
+         {"\"expression\":\"metadata/\""}},
+        {"short alphabetic variables are equations",
+         "状态 $dp$ 和规模 $N$ 都是公式，环境变量 $HOME$ 不是。",
+         "状态 $dp$ 和规模 $N$ 都是公式，环境变量 $HOME$ 不是。",
+         2,
+         0,
+         0,
+         0,
+         {"\"expression\":\"dp\"", "\"expression\":\"N\""},
+         {"\"expression\":\"HOME\""}},
+        {"multi backtick inline code remains literal",
+         "代码 ``a`b$not_formula$``，公式 $x$。",
+         "代码 a`b$not_formula$，公式 $x$。",
+         1,
+         0,
+         0,
+         0,
+         {"\"code\":true", "\"expression\":\"x\""},
+         {"\"expression\":\"not_formula\""}},
+        {"empty markdown fences are skipped",
+         "定义：\n\n```\n\n```\n\ndp[u] = sum[u]\n\n```\n\n```\n答案：",
+         "定义：",
+         0,
+         0,
+         0,
+         0,
+         {"dp[u] = sum[u]"},
+         {"\"type\":\"code\""}},
+        {"non-closing fence-like code line",
+         "```text\nfirst\n``` not a close\nsecond\n```\n",
+         "first",
+         0,
+         1,
+         0,
+         0,
+         {"``` not a close\\nsecond"},
+         {}},
+        {"katex annotation html",
+         HtmlFragmentToMarkdown("<span class=\"katex\"><span class=\"katex-mathml\"><math><semantics><mrow><mi>x</mi></mrow><annotation encoding=\"application/x-tex\">x^2+1</annotation></semantics></math></span><span class=\"katex-html\"><span>x</span><span>2</span></span></span>"),
+         "$x^2+1$",
+         1,
+         0,
+         0,
+         0,
+         {"\"expression\":\"x^2+1\""},
+         {"katex-html"}},
+        {"mathjax script formula html",
+         HtmlFragmentToMarkdown("<p>公式：</p><script type=\"math/tex; mode=display\">\\frac{1}{2}</script>"),
+         "公式：",
+         1,
+         0,
+         0,
+         0,
+         {"\"expression\":\"\\\\frac{1}{2}\""},
+         {"math/tex"}},
     };
 
     bool ok = true;

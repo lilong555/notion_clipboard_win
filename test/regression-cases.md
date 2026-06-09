@@ -90,3 +90,33 @@ Expected:
 
 - Non-content tag bodies are skipped.
 - Script/style text is not uploaded and does not become the page title.
+
+## Inline Code and URL Dollar Signs
+
+HTML inline code and Markdown code spans may contain dollar signs that look like LaTeX.
+URLs may also contain path segments such as `$metadata/$value`.
+
+Expected:
+
+- Inline code stays literal and keeps code annotation.
+- Dollar signs inside URL/path segments are not treated as equations.
+- Multi-backtick code spans preserve literal backticks inside the code.
+
+## HTML Math Sources
+
+Web pages may copy KaTeX or MathJax as HTML with visual spans plus hidden TeX annotations.
+
+Expected:
+
+- KaTeX `application/x-tex` annotations become Notion equations.
+- MathJax `math/tex` script content becomes a Notion equation.
+- Visual-only KaTeX/MathJax helper spans are not uploaded as duplicate text.
+
+## Fence Edge Cases
+
+Copied Markdown may include empty fences or code lines that start with fence characters.
+
+Expected:
+
+- Empty fenced code blocks do not produce empty Notion code blocks.
+- A code line like ```` ``` not a close ```` does not close the current fenced block.

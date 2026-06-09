@@ -168,10 +168,12 @@ enable_clipboard_listener=true
 - 行内公式：`$...$`、`\(...\)`。
 - 独立公式：`$$...$$`、`\[...\]`、`equation` / `align` / `gather` 环境。
 - 常见 Unicode 数学符号会做保守 LaTeX 修复，例如 `≤`、`≥`、`∫`、`α`。
+- 会保护 inline code 和 URL/path 中的 `$`，避免把 `$HOME$`、`$metadata/$value` 误识别成公式。
+- 从 HTML 剪贴板读取时，会尽量识别 KaTeX / MathJax 中的 TeX annotation，跳过视觉辅助和非正文 HTML。
 - fenced code block、标题、列表、任务列表、引用块会映射到对应 Notion block。
 - Markdown 表格暂时保守上传为 `plain text` 代码块，避免复杂表格在 Notion API 中被错误拆分。
 
-本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、`text`/未知代码语言降级、Markdown/LaTeX、任务列表、引用块、表格保守保留、多行内公式拆分、超长代码块拆分、超长公式降级、货币 `$` 误判、inline code 中的 `$`、Windows 路径、HTML 数字实体、script/style 污染和 append 请求体切分。
+本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、`text`/未知代码语言降级、Markdown/LaTeX、任务列表、引用块、表格保守保留、多行内公式拆分、超长代码块拆分、超长公式降级、货币 `$` 误判、inline code 中的 `$`、URL/path 中的 `$`、多反引号 code span、Windows 路径、HTML 数字实体、KaTeX/MathJax、script/style 污染和 append 请求体切分。
 
 ## 可靠性说明
 
