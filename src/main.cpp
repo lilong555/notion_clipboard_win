@@ -8,6 +8,7 @@
 #include "http_client.h"
 #include "json.h"
 #include "logger.h"
+#include "queue.h"
 #include "resource.h"
 #include "util.h"
 #include "win_util.h"
@@ -29,6 +30,7 @@
 #include <optional>
 #include <sstream>
 #include <stdexcept>
+#include <system_error>
 #include <string>
 #include <thread>
 #include <utility>
@@ -48,6 +50,9 @@ using ncw::AtomicWriteFile;
 using ncw::CanonicalizeNotionId;
 using ncw::CliOptions;
 using ncw::CurrentHotkeyModifiers;
+using ncw::EscapeJson;
+using ncw::Fnv1a64;
+using ncw::Hex64;
 using ncw::HotkeySpec;
 using ncw::HotkeySpecFromRecordedKey;
 using ncw::IsoUtcTimestampFromUnixMs;
@@ -61,10 +66,14 @@ using ncw::ParseIntOrDefault;
 using ncw::ParseU64OrDefault;
 using ncw::ParseCli;
 using ncw::PrintHelp;
+using ncw::PersistentQueue;
 using ncw::ReadWholeFile;
+using ncw::SummarizeForLog;
 using ncw::ToLowerAscii;
 using ncw::Trim;
 using ncw::UpsertConfigValue;
+using ncw::UploadFailure;
+using ncw::UploadJob;
 using ncw::Utf8ToWide;
 using ncw::ValidateConfigOrThrow;
 using ncw::WideToUtf8;
@@ -99,68 +108,6 @@ HICON LoadApplicationIcon(HINSTANCE instance, int width, int height)
         return icon;
     }
     return CreateGeneratedAppIcon(width, height);
-}
-
-std::string EscapeJson(const std::string &input)
-{
-    std::ostringstream oss;
-    for (unsigned char ch : input)
-    {
-        switch (ch)
-        {
-        case '\\':
-            oss << "\\\\";
-            break;
-        case '"':
-            oss << "\\\"";
-            break;
-        case '\b':
-            oss << "\\b";
-            break;
-        case '\f':
-            oss << "\\f";
-            break;
-        case '\n':
-            oss << "\\n";
-            break;
-        case '\r':
-            oss << "\\r";
-            break;
-        case '\t':
-            oss << "\\t";
-            break;
-        default:
-            if (ch < 0x20)
-            {
-                oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(ch)
-                    << std::dec << std::setfill(' ');
-            }
-            else
-            {
-                oss << static_cast<char>(ch);
-            }
-            break;
-        }
-    }
-    return oss.str();
-}
-
-std::uint64_t Fnv1a64(const std::string &text)
-{
-    std::uint64_t hash = 14695981039346656037ull;
-    for (unsigned char ch : text)
-    {
-        hash ^= ch;
-        hash *= 1099511628211ull;
-    }
-    return hash;
-}
-
-std::string Hex64(std::uint64_t value)
-{
-    std::ostringstream oss;
-    oss << std::hex << std::setw(16) << std::setfill('0') << value;
-    return oss.str();
 }
 
 std::string NormalizeLineEndings(std::string text)
@@ -379,39 +326,6 @@ std::string BuildTitleFromContent(const std::string &content)
     }
     return "Clipboard " + LocalTimestamp();
 }
-
-std::string SummarizeForLog(const std::string &text, std::size_t limit = 600)
-{
-    std::string trimmed = Trim(text);
-    if (trimmed.size() <= limit)
-    {
-        return trimmed;
-    }
-    return trimmed.substr(0, limit) + "...";
-}
-
-class UploadFailure : public std::runtime_error
-{
-public:
-    UploadFailure(std::string message, bool retryable, int retry_after_seconds)
-        : std::runtime_error(std::move(message)), retryable_(retryable), retry_after_seconds_(retry_after_seconds)
-    {
-    }
-
-    bool retryable() const
-    {
-        return retryable_;
-    }
-
-    int retry_after_seconds() const
-    {
-        return retry_after_seconds_;
-    }
-
-private:
-    bool retryable_ = false;
-    int retry_after_seconds_ = 0;
-};
 
 std::string TrimLeft(const std::string &input)
 {
@@ -2641,21 +2555,6 @@ int RunDryRunText(const std::string &text)
     return 0;
 }
 
-struct UploadJob
-{
-    std::string id;
-    std::uint64_t created_at_ms = 0;
-    std::uint64_t not_before_ms = 0;
-    int attempts = 0;
-    std::string hash;
-    std::string title;
-    std::string content;
-    std::string page_id;
-    std::string page_url;
-    std::size_t appended_block_count = 0;
-    std::string last_error;
-};
-
 std::atomic<std::uint64_t> g_job_counter{0};
 
 UploadJob MakeUploadJob(const std::string &content)
@@ -2673,228 +2572,6 @@ UploadJob MakeUploadJob(const std::string &content)
     job.id = id.str();
     return job;
 }
-
-std::string JobToJson(const UploadJob &job)
-{
-    std::ostringstream oss;
-    oss << "{\n"
-        << "  \"id\":\"" << EscapeJson(job.id) << "\",\n"
-        << "  \"created_at_ms\":" << job.created_at_ms << ",\n"
-        << "  \"not_before_ms\":" << job.not_before_ms << ",\n"
-        << "  \"attempts\":" << job.attempts << ",\n"
-        << "  \"hash\":\"" << EscapeJson(job.hash) << "\",\n"
-        << "  \"title\":\"" << EscapeJson(job.title) << "\",\n"
-        << "  \"content\":\"" << EscapeJson(job.content) << "\",\n"
-        << "  \"page_id\":\"" << EscapeJson(job.page_id) << "\",\n"
-        << "  \"page_url\":\"" << EscapeJson(job.page_url) << "\",\n"
-        << "  \"appended_block_count\":" << static_cast<unsigned long long>(job.appended_block_count) << ",\n"
-        << "  \"last_error\":\"" << EscapeJson(job.last_error) << "\"\n"
-        << "}\n";
-    return oss.str();
-}
-
-std::uint64_t JsonNumberAsU64(const JsonValue *value, std::uint64_t fallback)
-{
-    if (value == nullptr)
-    {
-        return fallback;
-    }
-    if (value->is_number())
-    {
-        return static_cast<std::uint64_t>(value->as_number());
-    }
-    if (value->is_string())
-    {
-        return ParseU64OrDefault(value->as_string(), fallback);
-    }
-    return fallback;
-}
-
-std::size_t JsonNumberAsSize(const JsonValue *value, std::size_t fallback)
-{
-    return static_cast<std::size_t>(JsonNumberAsU64(value, static_cast<std::uint64_t>(fallback)));
-}
-
-int JsonNumberAsInt(const JsonValue *value, int fallback)
-{
-    return static_cast<int>(JsonNumberAsU64(value, static_cast<std::uint64_t>(fallback)));
-}
-
-std::string JsonStringOrEmpty(const JsonValue *value)
-{
-    if (value == nullptr || !value->is_string())
-    {
-        return "";
-    }
-    return value->as_string();
-}
-
-UploadJob JobFromJson(const std::string &text)
-{
-    const JsonValue json = ParseJson(text);
-    if (!json.is_object())
-    {
-        throw std::runtime_error("任务文件不是 JSON object");
-    }
-    UploadJob job;
-    job.id = JsonStringOrEmpty(json.find("id"));
-    job.created_at_ms = JsonNumberAsU64(json.find("created_at_ms"), 0);
-    job.not_before_ms = JsonNumberAsU64(json.find("not_before_ms"), 0);
-    job.attempts = JsonNumberAsInt(json.find("attempts"), 0);
-    job.hash = JsonStringOrEmpty(json.find("hash"));
-    job.title = JsonStringOrEmpty(json.find("title"));
-    job.content = JsonStringOrEmpty(json.find("content"));
-    job.page_id = JsonStringOrEmpty(json.find("page_id"));
-    job.page_url = JsonStringOrEmpty(json.find("page_url"));
-    job.appended_block_count = JsonNumberAsSize(json.find("appended_block_count"), 0);
-    job.last_error = JsonStringOrEmpty(json.find("last_error"));
-    if (job.id.empty() || job.content.empty())
-    {
-        throw std::runtime_error("任务文件缺少 id 或 content");
-    }
-    return job;
-}
-
-class PersistentQueue
-{
-public:
-    PersistentQueue(fs::path state_dir, int max_retry_attempts)
-        : queue_dir_(std::move(state_dir) / L"queue"),
-          failed_dir_(queue_dir_.parent_path() / L"failed"),
-          max_retry_attempts_(max_retry_attempts)
-    {
-        fs::create_directories(queue_dir_);
-        fs::create_directories(failed_dir_);
-    }
-
-    void Enqueue(const UploadJob &job)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        AtomicWriteFile(JobPath(job.id), JobToJson(job));
-    }
-
-    void Update(const fs::path &path, const UploadJob &job)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        AtomicWriteFile(path, JobToJson(job));
-    }
-
-    void MarkSuccess(const fs::path &path)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        std::error_code ignored;
-        fs::remove(path, ignored);
-    }
-
-    void MarkFailure(const fs::path &path, UploadJob job, const std::string &error, bool retryable,
-                     int retry_after_seconds, Logger *logger)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        job.last_error = error;
-        job.attempts += 1;
-
-        if (!retryable || job.attempts > max_retry_attempts_)
-        {
-            const fs::path failed_path = failed_dir_ / path.filename();
-            AtomicWriteFile(failed_path, JobToJson(job));
-            std::error_code ignored;
-            fs::remove(path, ignored);
-            if (logger != nullptr)
-            {
-                logger->Error("任务移入 failed: " + job.id + "，原因: " + SummarizeForLog(error));
-            }
-            return;
-        }
-
-        job.not_before_ms = NowUnixMs() + ComputeBackoffMs(job.attempts, retry_after_seconds);
-        AtomicWriteFile(path, JobToJson(job));
-        if (logger != nullptr)
-        {
-            logger->Warn("任务稍后重试: " + job.id + "，attempt=" + std::to_string(job.attempts));
-        }
-    }
-
-    std::optional<std::pair<UploadJob, fs::path>> NextDueJob(std::uint64_t now_ms, std::uint64_t *next_due_ms,
-                                                             Logger *logger)
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-        *next_due_ms = 0;
-        for (const fs::path &path : ListJobFiles())
-        {
-            UploadJob job;
-            try
-            {
-                job = JobFromJson(ReadWholeFile(path));
-            }
-            catch (const std::exception &ex)
-            {
-                const fs::path failed_path = failed_dir_ / path.filename();
-                std::error_code ignored;
-                fs::rename(path, failed_path, ignored);
-                if (logger != nullptr)
-                {
-                    logger->Error("任务文件损坏，已移动到 failed: " + WideToUtf8(path.filename().wstring()) +
-                                  "，原因: " + ex.what());
-                }
-                continue;
-            }
-
-            if (job.not_before_ms == 0 || job.not_before_ms <= now_ms)
-            {
-                return std::make_pair(job, path);
-            }
-            if (*next_due_ms == 0 || job.not_before_ms < *next_due_ms)
-            {
-                *next_due_ms = job.not_before_ms;
-            }
-        }
-        return std::nullopt;
-    }
-
-private:
-    fs::path JobPath(const std::string &id) const
-    {
-        return queue_dir_ / (Utf8ToWide(id) + L".job");
-    }
-
-    std::vector<fs::path> ListJobFiles() const
-    {
-        std::vector<fs::path> files;
-        if (!fs::exists(queue_dir_))
-        {
-            return files;
-        }
-        for (const fs::directory_entry &entry : fs::directory_iterator(queue_dir_))
-        {
-            if (entry.is_regular_file() && entry.path().extension() == L".job")
-            {
-                files.push_back(entry.path());
-            }
-        }
-        std::sort(files.begin(), files.end());
-        return files;
-    }
-
-    static std::uint64_t ComputeBackoffMs(int attempts, int retry_after_seconds)
-    {
-        if (retry_after_seconds > 0)
-        {
-            return static_cast<std::uint64_t>(retry_after_seconds) * 1000ull;
-        }
-
-        const int exponent = std::min(attempts, 10);
-        const std::uint64_t base = 2000ull;
-        const std::uint64_t max_delay = 15ull * 60ull * 1000ull;
-        const std::uint64_t delay = std::min(max_delay, base << exponent);
-        const std::uint64_t jitter = Fnv1a64(std::to_string(NowUnixMs())) % 1000ull;
-        return delay + jitter;
-    }
-
-    fs::path queue_dir_;
-    fs::path failed_dir_;
-    int max_retry_attempts_ = 12;
-    std::mutex mutex_;
-};
 
 class NotionClient
 {

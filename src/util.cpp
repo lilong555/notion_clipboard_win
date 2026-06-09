@@ -40,6 +40,50 @@ std::string ToLowerAscii(std::string input)
     return input;
 }
 
+std::string EscapeJson(const std::string &input)
+{
+    std::ostringstream oss;
+    for (unsigned char ch : input)
+    {
+        switch (ch)
+        {
+        case '\\':
+            oss << "\\\\";
+            break;
+        case '"':
+            oss << "\\\"";
+            break;
+        case '\b':
+            oss << "\\b";
+            break;
+        case '\f':
+            oss << "\\f";
+            break;
+        case '\n':
+            oss << "\\n";
+            break;
+        case '\r':
+            oss << "\\r";
+            break;
+        case '\t':
+            oss << "\\t";
+            break;
+        default:
+            if (ch < 0x20)
+            {
+                oss << "\\u" << std::hex << std::setw(4) << std::setfill('0') << static_cast<int>(ch)
+                    << std::dec << std::setfill(' ');
+            }
+            else
+            {
+                oss << static_cast<char>(ch);
+            }
+            break;
+        }
+    }
+    return oss.str();
+}
+
 bool ParseBool(std::string value)
 {
     value = ToLowerAscii(Trim(value));
@@ -68,6 +112,34 @@ std::uint64_t ParseU64OrDefault(const std::string &value, std::uint64_t fallback
     {
         return fallback;
     }
+}
+
+std::uint64_t Fnv1a64(const std::string &text)
+{
+    std::uint64_t hash = 14695981039346656037ull;
+    for (unsigned char ch : text)
+    {
+        hash ^= ch;
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+std::string Hex64(std::uint64_t value)
+{
+    std::ostringstream oss;
+    oss << std::hex << std::setw(16) << std::setfill('0') << value;
+    return oss.str();
+}
+
+std::string SummarizeForLog(const std::string &text, std::size_t limit)
+{
+    std::string trimmed = Trim(text);
+    if (trimmed.size() <= limit)
+    {
+        return trimmed;
+    }
+    return trimmed.substr(0, limit) + "...";
 }
 
 std::string ReadWholeFile(const fs::path &path)
