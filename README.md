@@ -7,6 +7,7 @@ Windows 原生剪贴板上传工具。程序常驻后台托盘，按全局热键
 ## 功能亮点
 
 - 后台托盘常驻，默认热键 `Ctrl+Shift+B` 上传当前剪贴板。
+- 自定义托盘/窗口图标，鼠标悬停托盘图标时显示 `Notion Clipboard Win`。
 - 托盘菜单支持录制新热键，成功后立即重新注册并写回配置。
 - 可关闭托盘通知，设置会持久写回 `tray_notifications`。
 - 可选使用 `AddClipboardFormatListener` 监听剪贴板事件，不做轮询。

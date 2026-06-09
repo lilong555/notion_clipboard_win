@@ -7,6 +7,7 @@ A native Windows clipboard uploader for Notion. It runs as a background tray pro
 ## Highlights
 
 - Background tray process with `Ctrl+Shift+B` as the default upload hotkey.
+- Custom tray/window icon, with `Notion Clipboard Win` shown when hovering over the tray icon.
 - Tray menu hotkey recorder. The new hotkey is registered immediately and persisted to the config file.
 - Tray notification toggle. The setting is persisted through `tray_notifications`.
 - Optional clipboard event listener through `AddClipboardFormatListener`; no polling.

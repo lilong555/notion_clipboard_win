@@ -31,6 +31,7 @@ target_link_libraries(notion_clipboard_win PRIVATE
     winhttp
     user32
     shell32
+    gdi32
 )
 
 if(MSVC)
