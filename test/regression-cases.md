@@ -50,3 +50,21 @@ Expected:
 - Tasks become Notion to-do blocks.
 - Quotes become Notion quote blocks.
 - Tables are preserved as `plain text` code blocks.
+
+## Notion API Rich Text Limits
+
+Notion API rejects oversized rich text payloads inside a single block.
+
+Expected:
+
+- A block contains at most 90 rich-text-like objects in local tests.
+- Long paragraphs, long code blocks, and many inline equations are split across multiple Notion blocks.
+
+## Long Formula Fallback
+
+Notion equation expressions have a small API limit compared with arbitrary copied math text.
+
+Expected:
+
+- Short formulas become equation rich text or equation blocks.
+- Overlong display formulas are preserved as `latex` code blocks instead of causing HTTP 400.

@@ -165,7 +165,7 @@ enable_clipboard_listener=true
 - fenced code block、标题、列表、任务列表、引用块会映射到对应 Notion block。
 - Markdown 表格暂时保守上传为 `plain text` 代码块，避免复杂表格在 Notion API 中被错误拆分。
 
-本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、`text`/未知代码语言降级、Markdown/LaTeX、任务列表、引用块和表格保守保留。
+本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、`text`/未知代码语言降级、Markdown/LaTeX、任务列表、引用块、表格保守保留、多行内公式拆分、超长代码块拆分和超长公式降级。
 
 ## 可靠性说明
 

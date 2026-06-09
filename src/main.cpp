@@ -2445,17 +2445,20 @@ std::string BuildTextRichText(const std::string &text, bool bold = false, bool c
            (code ? "true" : "false") + ",\"color\":\"default\"}}";
 }
 
-std::string BuildRichTextJson(const std::vector<InlineSegment> &segments)
+std::vector<InlineSegment> NormalizeRichTextSegmentsForNotion(const std::vector<InlineSegment> &segments)
 {
-    std::ostringstream oss;
-    oss << "[";
-    bool first = true;
+    constexpr std::size_t kTextContentLimit = 1800;
+    constexpr std::size_t kEquationExpressionLimit = 1000;
+
+    std::vector<InlineSegment> normalized;
+    normalized.reserve(segments.size());
     for (const InlineSegment &segment : segments)
     {
         if (segment.content.empty())
         {
             continue;
         }
+
         if (segment.type == InlineSegment::Type::Equation)
         {
             const std::string repaired = RepairLatexExpression(segment.content);
@@ -2463,33 +2466,90 @@ std::string BuildRichTextJson(const std::vector<InlineSegment> &segments)
             {
                 continue;
             }
+            if (repaired.size() <= kEquationExpressionLimit)
+            {
+                normalized.push_back({InlineSegment::Type::Equation, repaired, false, false});
+                continue;
+            }
+
+            const std::string fallback = "$" + CollapseWhitespace(segment.content) + "$";
+            for (const std::string &chunk : SplitUtf8ByCharLimit(fallback, kTextContentLimit))
+            {
+                normalized.push_back({InlineSegment::Type::Text, chunk, false, false});
+            }
+            continue;
+        }
+
+        for (const std::string &chunk : SplitUtf8ByCharLimit(segment.content, kTextContentLimit))
+        {
+            if (!chunk.empty())
+            {
+                normalized.push_back({InlineSegment::Type::Text, chunk, segment.bold, segment.code});
+            }
+        }
+    }
+    return normalized;
+}
+
+std::string BuildRichTextJson(const std::vector<InlineSegment> &segments)
+{
+    const std::vector<InlineSegment> normalized = NormalizeRichTextSegmentsForNotion(segments);
+    std::ostringstream oss;
+    oss << "[";
+    bool first = true;
+    for (const InlineSegment &segment : normalized)
+    {
+        if (segment.content.empty())
+        {
+            continue;
+        }
+        if (segment.type == InlineSegment::Type::Equation)
+        {
             if (!first)
             {
                 oss << ",";
             }
-            oss << "{\"type\":\"equation\",\"equation\":{\"expression\":\"" << EscapeJson(repaired)
+            oss << "{\"type\":\"equation\",\"equation\":{\"expression\":\"" << EscapeJson(segment.content)
                 << "\"},\"annotations\":{\"bold\":false,\"italic\":false,\"strikethrough\":false,"
                    "\"underline\":false,\"code\":false,\"color\":\"default\"}}";
             first = false;
             continue;
         }
 
-        for (const std::string &chunk : SplitUtf8ByCharLimit(segment.content, 1800))
+        if (!first)
         {
-            if (chunk.empty())
-            {
-                continue;
-            }
-            if (!first)
-            {
-                oss << ",";
-            }
-            oss << BuildTextRichText(chunk, segment.bold, segment.code);
-            first = false;
+            oss << ",";
         }
+        oss << BuildTextRichText(segment.content, segment.bold, segment.code);
+        first = false;
     }
     oss << "]";
     return oss.str();
+}
+
+std::vector<std::vector<InlineSegment>> SplitRichTextSegmentsForBlocks(const std::vector<InlineSegment> &segments)
+{
+    constexpr std::size_t kMaxRichTextObjectsPerBlock = 90;
+    const std::vector<InlineSegment> normalized = NormalizeRichTextSegmentsForNotion(segments);
+    std::vector<std::vector<InlineSegment>> groups;
+    std::vector<InlineSegment> current;
+    current.reserve(kMaxRichTextObjectsPerBlock);
+
+    for (const InlineSegment &segment : normalized)
+    {
+        if (current.size() >= kMaxRichTextObjectsPerBlock)
+        {
+            groups.push_back(std::move(current));
+            current.clear();
+            current.reserve(kMaxRichTextObjectsPerBlock);
+        }
+        current.push_back(segment);
+    }
+    if (!current.empty())
+    {
+        groups.push_back(std::move(current));
+    }
+    return groups;
 }
 
 std::string BuildRichTextBlock(const std::string &type, const std::vector<InlineSegment> &rich_text)
@@ -2498,10 +2558,27 @@ std::string BuildRichTextBlock(const std::string &type, const std::vector<Inline
            BuildRichTextJson(rich_text) + "}}";
 }
 
+void AppendRichTextBlocks(std::vector<std::string> *blocks, const std::string &type,
+                          const std::vector<InlineSegment> &rich_text)
+{
+    for (const std::vector<InlineSegment> &group : SplitRichTextSegmentsForBlocks(rich_text))
+    {
+        blocks->push_back(BuildRichTextBlock(type, group));
+    }
+}
+
 std::string BuildToDoBlock(const std::vector<InlineSegment> &rich_text, bool checked)
 {
     return "{\"object\":\"block\",\"type\":\"to_do\",\"to_do\":{\"rich_text\":" + BuildRichTextJson(rich_text) +
            ",\"checked\":" + (checked ? "true" : "false") + "}}";
+}
+
+void AppendToDoBlocks(std::vector<std::string> *blocks, const std::vector<InlineSegment> &rich_text, bool checked)
+{
+    for (const std::vector<InlineSegment> &group : SplitRichTextSegmentsForBlocks(rich_text))
+    {
+        blocks->push_back(BuildToDoBlock(group, checked));
+    }
 }
 
 std::string BuildEquationBlock(const std::string &expression)
@@ -2568,6 +2645,36 @@ std::string BuildCodeBlock(const std::string &code, const std::string &language)
            ",\"language\":\"" + EscapeJson(safe_language) + "\"}}";
 }
 
+void AppendCodeBlocks(std::vector<std::string> *blocks, const std::string &code, const std::string &language)
+{
+    const std::vector<InlineSegment> code_text = {{InlineSegment::Type::Text, code, false, false}};
+    for (const std::vector<InlineSegment> &group : SplitRichTextSegmentsForBlocks(code_text))
+    {
+        std::string merged;
+        for (const InlineSegment &segment : group)
+        {
+            merged += segment.content;
+        }
+        blocks->push_back(BuildCodeBlock(merged, language));
+    }
+}
+
+void AppendEquationBlocks(std::vector<std::string> *blocks, const std::string &expression)
+{
+    constexpr std::size_t kEquationExpressionLimit = 1000;
+    const std::string repaired = RepairLatexExpression(expression);
+    if (repaired.empty())
+    {
+        return;
+    }
+    if (repaired.size() <= kEquationExpressionLimit)
+    {
+        blocks->push_back(BuildEquationBlock(repaired));
+        return;
+    }
+    AppendCodeBlocks(blocks, repaired, "latex");
+}
+
 std::vector<std::string> BuildTextBlocks(const std::string &content)
 {
     const std::vector<MarkdownBlock> markdown_blocks = ParseMarkdownBlocks(content);
@@ -2578,43 +2685,43 @@ std::vector<std::string> BuildTextBlocks(const std::string &content)
         switch (block.type)
         {
         case MarkdownBlock::Type::Paragraph:
-            blocks.push_back(BuildRichTextBlock("paragraph", block.rich_text));
+            AppendRichTextBlocks(&blocks, "paragraph", block.rich_text);
             break;
         case MarkdownBlock::Type::Heading1:
-            blocks.push_back(BuildRichTextBlock("heading_1", block.rich_text));
+            AppendRichTextBlocks(&blocks, "heading_1", block.rich_text);
             break;
         case MarkdownBlock::Type::Heading2:
-            blocks.push_back(BuildRichTextBlock("heading_2", block.rich_text));
+            AppendRichTextBlocks(&blocks, "heading_2", block.rich_text);
             break;
         case MarkdownBlock::Type::Heading3:
-            blocks.push_back(BuildRichTextBlock("heading_3", block.rich_text));
+            AppendRichTextBlocks(&blocks, "heading_3", block.rich_text);
             break;
         case MarkdownBlock::Type::BulletedListItem:
-            blocks.push_back(BuildRichTextBlock("bulleted_list_item", block.rich_text));
+            AppendRichTextBlocks(&blocks, "bulleted_list_item", block.rich_text);
             break;
         case MarkdownBlock::Type::NumberedListItem:
-            blocks.push_back(BuildRichTextBlock("numbered_list_item", block.rich_text));
+            AppendRichTextBlocks(&blocks, "numbered_list_item", block.rich_text);
             break;
         case MarkdownBlock::Type::Quote:
-            blocks.push_back(BuildRichTextBlock("quote", block.rich_text));
+            AppendRichTextBlocks(&blocks, "quote", block.rich_text);
             break;
         case MarkdownBlock::Type::ToDo:
-            blocks.push_back(BuildToDoBlock(block.rich_text, block.checked));
+            AppendToDoBlocks(&blocks, block.rich_text, block.checked);
             break;
         case MarkdownBlock::Type::Divider:
             blocks.push_back(BuildDividerBlock());
             break;
         case MarkdownBlock::Type::Equation:
-            blocks.push_back(BuildEquationBlock(block.text));
+            AppendEquationBlocks(&blocks, block.text);
             break;
         case MarkdownBlock::Type::Code:
-            blocks.push_back(BuildCodeBlock(block.text, block.language));
+            AppendCodeBlocks(&blocks, block.text, block.language);
             break;
         }
     }
     if (blocks.empty() && !Trim(content).empty())
     {
-        blocks.push_back(BuildRichTextBlock("paragraph", ParseInlineMarkdown(content)));
+        AppendRichTextBlocks(&blocks, "paragraph", ParseInlineMarkdown(content));
     }
     return blocks;
 }
@@ -2951,6 +3058,24 @@ std::size_t CountOccurrencesInBlocks(const std::vector<std::string> &blocks, con
     return count;
 }
 
+std::size_t CountOccurrencesInString(const std::string &text, const std::string &needle)
+{
+    std::size_t count = 0;
+    std::size_t pos = 0;
+    while (!needle.empty() && (pos = text.find(needle, pos)) != std::string::npos)
+    {
+        ++count;
+        pos += needle.size();
+    }
+    return count;
+}
+
+std::size_t RichTextObjectCountForJsonBlock(const std::string &block)
+{
+    return CountOccurrencesInString(block, "\"type\":\"text\"") +
+           CountOccurrencesInString(block, "\"type\":\"equation\"");
+}
+
 bool BlocksContain(const std::vector<std::string> &blocks, const std::string &needle)
 {
     return std::any_of(blocks.begin(), blocks.end(), [&](const std::string &block)
@@ -3007,6 +3132,13 @@ bool RunConversionTest(const ConversionTestCase &test)
     {
         return fail("quote block count mismatch");
     }
+    for (const std::string &block : blocks)
+    {
+        if (RichTextObjectCountForJsonBlock(block) > 90)
+        {
+            return fail("rich_text object count exceeds safety limit");
+        }
+    }
     for (const std::string &needle : test.required)
     {
         if (!BlocksContain(blocks, needle))
@@ -3028,6 +3160,20 @@ bool RunConversionTest(const ConversionTestCase &test)
 
 int RunSelfTest()
 {
+    std::string many_inline_equations = "Many equations\n\n";
+    for (int i = 0; i < 120; ++i)
+    {
+        many_inline_equations += "$x_" + std::to_string(i) + "$ ";
+    }
+
+    std::string long_code = "```text\n";
+    long_code.append(170000, 'a');
+    long_code += "\n```";
+
+    std::string long_display_equation = "$$\n";
+    long_display_equation.append(1200, 'x');
+    long_display_equation += "\n$$";
+
     const std::vector<ConversionTestCase> tests = {
         {"plain algorithm explanation",
          "对，这题正解就是：SCC 缩点成 DAG，然后在 DAG 上做最大路径和 DP。\n\n"
@@ -3081,6 +3227,33 @@ int RunSelfTest()
          1,
          {"\"checked\":true", "\"checked\":false", "\"language\":\"plain text\""},
          {"\"language\":\"markdown\""}},
+        {"many inline equations split safely",
+         many_inline_equations,
+         "Many equations",
+         120,
+         0,
+         0,
+         0,
+         {},
+         {}},
+        {"long code block split safely",
+         long_code,
+         "",
+         0,
+         2,
+         0,
+         0,
+         {"\"language\":\"plain text\""},
+         {"\"language\":\"text\""}},
+        {"long display equation fallback",
+         long_display_equation,
+         "",
+         0,
+         1,
+         0,
+         0,
+         {"\"language\":\"latex\""},
+         {"\"type\":\"equation\""}},
     };
 
     bool ok = true;
