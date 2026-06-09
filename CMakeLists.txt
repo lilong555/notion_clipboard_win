@@ -21,6 +21,7 @@ add_executable(notion_clipboard_win
     src/main.cpp
     src/app_icon.cpp
     src/config.cpp
+    src/converter.cpp
     src/hotkey.cpp
     src/http_client.cpp
     src/json.cpp
