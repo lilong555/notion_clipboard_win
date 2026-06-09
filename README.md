@@ -153,7 +153,7 @@ enable_clipboard_listener=true
 - `duplicate_suppression_ms`：短时间忽略相同内容，避免重复通知造成重复上传。
 - `max_clipboard_bytes`：跳过异常大的剪贴板文本，减少内存峰值。
 - `min_request_interval_ms`：限制 Notion 请求频率，避免突发写入。
-- `append_batch_size`：控制每次追加的 block 数，默认 40，低于 Notion 单请求 100 个 children 的上限。
+- `append_batch_size`：控制每次追加的 block 数，默认 40，低于 Notion 单请求 100 个 children 的上限；程序还会按约 400KB 请求体安全上限自动再切分。
 
 ## Markdown / LaTeX
 
@@ -165,7 +165,7 @@ enable_clipboard_listener=true
 - fenced code block、标题、列表、任务列表、引用块会映射到对应 Notion block。
 - Markdown 表格暂时保守上传为 `plain text` 代码块，避免复杂表格在 Notion API 中被错误拆分。
 
-本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、`text`/未知代码语言降级、Markdown/LaTeX、任务列表、引用块、表格保守保留、多行内公式拆分、超长代码块拆分和超长公式降级。
+本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、`text`/未知代码语言降级、Markdown/LaTeX、任务列表、引用块、表格保守保留、多行内公式拆分、超长代码块拆分、超长公式降级、货币 `$` 误判、HTML 数字实体和 append 请求体切分。
 
 ## 可靠性说明
 

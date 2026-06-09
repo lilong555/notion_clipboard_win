@@ -2726,6 +2726,70 @@ std::vector<std::string> BuildTextBlocks(const std::string &content)
     return blocks;
 }
 
+std::size_t EstimateAppendChildrenBodyBytes(const std::vector<std::string> &blocks, std::size_t begin, std::size_t end)
+{
+    std::size_t bytes = std::string("{\"children\":[]}").size();
+    for (std::size_t i = begin; i < end; ++i)
+    {
+        bytes += blocks[i].size();
+        if (i != begin)
+        {
+            bytes += 1;
+        }
+    }
+    return bytes;
+}
+
+std::size_t SelectAppendBatchEnd(const std::vector<std::string> &blocks, std::size_t begin, std::size_t max_blocks,
+                                 std::size_t max_body_bytes)
+{
+    if (begin >= blocks.size())
+    {
+        return begin;
+    }
+
+    const std::size_t block_limit = std::max<std::size_t>(1, max_blocks);
+    std::size_t end = begin;
+    std::size_t bytes = std::string("{\"children\":[]}").size();
+    while (end < blocks.size() && end - begin < block_limit)
+    {
+        const std::size_t next_bytes = bytes + blocks[end].size() + (end == begin ? 0 : 1);
+        if (end > begin && next_bytes > max_body_bytes)
+        {
+            break;
+        }
+        bytes = next_bytes;
+        ++end;
+    }
+    return std::max(begin + 1, end);
+}
+
+void AppendUtf8CodePoint(std::string *output, unsigned int code_point)
+{
+    if (code_point <= 0x7f)
+    {
+        output->push_back(static_cast<char>(code_point));
+    }
+    else if (code_point <= 0x7ff)
+    {
+        output->push_back(static_cast<char>(0xc0 | (code_point >> 6)));
+        output->push_back(static_cast<char>(0x80 | (code_point & 0x3f)));
+    }
+    else if (code_point <= 0xffff)
+    {
+        output->push_back(static_cast<char>(0xe0 | (code_point >> 12)));
+        output->push_back(static_cast<char>(0x80 | ((code_point >> 6) & 0x3f)));
+        output->push_back(static_cast<char>(0x80 | (code_point & 0x3f)));
+    }
+    else if (code_point <= 0x10ffff)
+    {
+        output->push_back(static_cast<char>(0xf0 | (code_point >> 18)));
+        output->push_back(static_cast<char>(0x80 | ((code_point >> 12) & 0x3f)));
+        output->push_back(static_cast<char>(0x80 | ((code_point >> 6) & 0x3f)));
+        output->push_back(static_cast<char>(0x80 | (code_point & 0x3f)));
+    }
+}
+
 std::string DecodeHtmlEntities(const std::string &text)
 {
     std::string output;
@@ -2769,6 +2833,27 @@ std::string DecodeHtmlEntities(const std::string &text)
         else if (entity == "nbsp")
         {
             output.push_back(' ');
+        }
+        else if (entity.size() > 1 && entity[0] == '#')
+        {
+            try
+            {
+                const bool hex = entity.size() > 2 && entity[1] == 'x';
+                const std::string number = hex ? entity.substr(2) : entity.substr(1);
+                const unsigned int code_point = static_cast<unsigned int>(std::stoul(number, nullptr, hex ? 16 : 10));
+                if (code_point > 0 && code_point <= 0x10ffff)
+                {
+                    AppendUtf8CodePoint(&output, code_point);
+                }
+                else
+                {
+                    output += text.substr(i, semi - i + 1);
+                }
+            }
+            catch (...)
+            {
+                output += text.substr(i, semi - i + 1);
+            }
         }
         else
         {
@@ -3138,6 +3223,10 @@ bool RunConversionTest(const ConversionTestCase &test)
         {
             return fail("rich_text object count exceeds safety limit");
         }
+        if (block.size() > 400ull * 1024ull)
+        {
+            return fail("single block JSON exceeds safety byte limit");
+        }
     }
     for (const std::string &needle : test.required)
     {
@@ -3173,6 +3262,8 @@ int RunSelfTest()
     std::string long_display_equation = "$$\n";
     long_display_equation.append(1200, 'x');
     long_display_equation += "\n$$";
+
+    std::string unclosed_code = "```cpp\nint main() { return 0; }\n";
 
     const std::vector<ConversionTestCase> tests = {
         {"plain algorithm explanation",
@@ -3254,12 +3345,62 @@ int RunSelfTest()
          0,
          {"\"language\":\"latex\""},
          {"\"type\":\"equation\""}},
+        {"currency dollars are not equations",
+         "价格是 $100，另一个价格是 $200。这里不是公式。\n",
+         "价格是 $100，另一个价格是 $200。这里不是公式。",
+         0,
+         0,
+         0,
+         0,
+         {},
+         {"\"type\":\"equation\""}},
+        {"unclosed code fence remains safe",
+         unclosed_code,
+         "int main() { return 0; }",
+         0,
+         1,
+         0,
+         0,
+         {"\"language\":\"c++\""},
+         {}},
+        {"html numeric entities",
+         HtmlFragmentToMarkdown("<p>&#x03b1; + &#946; &lt; 3 &amp;&amp; ok</p>"),
+         "α + β < 3 && ok",
+         0,
+         0,
+         0,
+         0,
+         {},
+         {"&#x03b1;", "&#946;", "&lt;"}},
     };
 
     bool ok = true;
     for (const ConversionTestCase &test : tests)
     {
         ok = RunConversionTest(test) && ok;
+    }
+
+    std::vector<std::string> payload_blocks;
+    for (int i = 0; i < 12; ++i)
+    {
+        payload_blocks.push_back(std::string(85000, 'x'));
+    }
+    for (std::size_t begin = 0; begin < payload_blocks.size();)
+    {
+        const std::size_t end = SelectAppendBatchEnd(payload_blocks, begin, 40, 400ull * 1024ull);
+        const std::size_t bytes = EstimateAppendChildrenBodyBytes(payload_blocks, begin, end);
+        if (end <= begin || end > payload_blocks.size() || bytes > 400ull * 1024ull)
+        {
+            std::cout << "[FAIL] append payload batch sizing: begin=" << begin << ", end=" << end
+                      << ", bytes=" << bytes << "\n";
+            ok = false;
+            break;
+        }
+        begin = end;
+    }
+    if (ok)
+    {
+        std::cout << "[PASS] append payload batch sizing\n";
     }
     std::cout << (ok ? "self-test passed\n" : "self-test failed\n");
     return ok ? 0 : 1;
@@ -3557,8 +3698,10 @@ public:
 
         for (std::size_t begin = job->appended_block_count; begin < blocks.size();)
         {
-            const std::size_t end = std::min<std::size_t>(begin + static_cast<std::size_t>(config_.append_batch_size),
-                                                          blocks.size());
+            constexpr std::size_t kMaxAppendRequestBytes = 400ull * 1024ull;
+            const std::size_t end =
+                SelectAppendBatchEnd(blocks, begin, static_cast<std::size_t>(config_.append_batch_size),
+                                     kMaxAppendRequestBytes);
             AppendBlocks(job->page_id, blocks, begin, end);
             job->appended_block_count = end;
             checkpoint();

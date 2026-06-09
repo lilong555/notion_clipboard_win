@@ -58,7 +58,9 @@ Notion API rejects oversized rich text payloads inside a single block.
 Expected:
 
 - A block contains at most 90 rich-text-like objects in local tests.
+- A single block JSON stays under the local 400KB safety limit.
 - Long paragraphs, long code blocks, and many inline equations are split across multiple Notion blocks.
+- Append batches stay under the local 400KB request-body safety limit.
 
 ## Long Formula Fallback
 
@@ -68,3 +70,12 @@ Expected:
 
 - Short formulas become equation rich text or equation blocks.
 - Overlong display formulas are preserved as `latex` code blocks instead of causing HTTP 400.
+
+## Literal Dollar Signs and HTML Entities
+
+Algorithm notes and copied HTML may contain currency-like `$100` text or numeric entities.
+
+Expected:
+
+- Currency-style `$` text is not treated as an equation.
+- HTML decimal and hexadecimal numeric entities are decoded before conversion.
