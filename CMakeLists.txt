@@ -13,6 +13,7 @@ option(NOTION_CLIPBOARD_WIN_GUI "构建为无控制台窗口的后台程序" OFF
 
 add_executable(notion_clipboard_win
     src/main.cpp
+    src/app_icon.cpp
     src/json.cpp
 )
 
