@@ -40,11 +40,13 @@ constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 constexpr UINT kMenuUploadNow = 3001;
 constexpr UINT kMenuHotkeyStatus = 3002;
 constexpr UINT kMenuToggleHotkey = 3003;
-constexpr UINT kMenuToggleClipboardListener = 3004;
-constexpr UINT kMenuOpenConfig = 3005;
-constexpr UINT kMenuOpenLog = 3006;
-constexpr UINT kMenuOpenStateDir = 3007;
-constexpr UINT kMenuExit = 3008;
+constexpr UINT kMenuRecordHotkey = 3004;
+constexpr UINT kMenuToggleNotifications = 3005;
+constexpr UINT kMenuToggleClipboardListener = 3006;
+constexpr UINT kMenuOpenConfig = 3007;
+constexpr UINT kMenuOpenLog = 3008;
+constexpr UINT kMenuOpenStateDir = 3009;
+constexpr UINT kMenuExit = 3010;
 
 struct HttpResponse
 {
@@ -679,7 +681,11 @@ std::string ReadWholeFile(const fs::path &path)
 
 void AtomicWriteFile(const fs::path &path, const std::string &content)
 {
-    fs::create_directories(path.parent_path());
+    const fs::path parent = path.parent_path();
+    if (!parent.empty())
+    {
+        fs::create_directories(parent);
+    }
 
     std::wstring suffix = L".tmp.";
     suffix += std::to_wstring(GetCurrentProcessId());
@@ -710,6 +716,58 @@ void AtomicWriteFile(const fs::path &path, const std::string &content)
         fs::remove(temp_path, ignored);
         throw std::runtime_error("原子替换文件失败: " + error);
     }
+}
+
+void UpsertConfigValue(const fs::path &path, const std::string &key, const std::string &value)
+{
+    std::vector<std::string> lines;
+    if (fs::exists(path))
+    {
+        std::istringstream input(ReadWholeFile(path));
+        std::string line;
+        while (std::getline(input, line))
+        {
+            if (!line.empty() && line.back() == '\r')
+            {
+                line.pop_back();
+            }
+            lines.push_back(line);
+        }
+    }
+
+    const std::string normalized_key = ToLowerAscii(Trim(key));
+    bool updated = false;
+    for (std::string &line : lines)
+    {
+        const std::string trimmed = Trim(line);
+        if (trimmed.empty() || trimmed[0] == '#' || trimmed[0] == ';')
+        {
+            continue;
+        }
+        const std::size_t eq = line.find('=');
+        if (eq == std::string::npos)
+        {
+            continue;
+        }
+        if (ToLowerAscii(Trim(line.substr(0, eq))) == normalized_key)
+        {
+            line = key + "=" + value;
+            updated = true;
+            break;
+        }
+    }
+
+    if (!updated)
+    {
+        lines.push_back(key + "=" + value);
+    }
+
+    std::ostringstream output;
+    for (const std::string &line : lines)
+    {
+        output << line << "\n";
+    }
+    AtomicWriteFile(path, output.str());
 }
 
 std::uint64_t NowUnixMs()
@@ -1262,6 +1320,47 @@ std::optional<std::pair<UINT, std::string>> ParseHotkeyKey(const std::string &to
     return std::nullopt;
 }
 
+std::optional<std::string> HotkeyKeyLabelFromVk(UINT vk)
+{
+    if (vk >= 'A' && vk <= 'Z')
+    {
+        return std::string(1, static_cast<char>(vk));
+    }
+    if (vk >= '0' && vk <= '9')
+    {
+        return std::string(1, static_cast<char>(vk));
+    }
+    if (vk >= VK_F1 && vk <= VK_F24)
+    {
+        return "F" + std::to_string(static_cast<int>(vk - VK_F1 + 1));
+    }
+
+    const std::map<UINT, std::string> names = {
+        {VK_BACK, "Backspace"},
+        {VK_DELETE, "Delete"},
+        {VK_DOWN, "Down"},
+        {VK_END, "End"},
+        {VK_RETURN, "Enter"},
+        {VK_HOME, "Home"},
+        {VK_INSERT, "Insert"},
+        {VK_LEFT, "Left"},
+        {VK_NEXT, "PageDown"},
+        {VK_PRIOR, "PageUp"},
+        {VK_PAUSE, "Pause"},
+        {VK_SNAPSHOT, "PrintScreen"},
+        {VK_RIGHT, "Right"},
+        {VK_SPACE, "Space"},
+        {VK_TAB, "Tab"},
+        {VK_UP, "Up"},
+    };
+    const auto it = names.find(vk);
+    if (it != names.end())
+    {
+        return it->second;
+    }
+    return std::nullopt;
+}
+
 std::string FormatHotkeyDisplay(UINT modifiers, const std::string &key_label)
 {
     std::vector<std::string> parts;
@@ -1339,6 +1438,59 @@ HotkeySpec ParseHotkeyOrThrow(const std::string &value)
         throw std::runtime_error("热键必须包含至少一个修饰键和一个主按键: " + value);
     }
     spec.display = FormatHotkeyDisplay(spec.modifiers, key_label);
+    return spec;
+}
+
+bool IsModifierVirtualKey(UINT vk)
+{
+    return vk == VK_CONTROL || vk == VK_LCONTROL || vk == VK_RCONTROL || vk == VK_MENU || vk == VK_LMENU ||
+           vk == VK_RMENU || vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT || vk == VK_LWIN ||
+           vk == VK_RWIN;
+}
+
+bool IsVirtualKeyDown(int vk)
+{
+    return (GetAsyncKeyState(vk) & 0x8000) != 0;
+}
+
+UINT CurrentHotkeyModifiers()
+{
+    UINT modifiers = 0;
+    if (IsVirtualKeyDown(VK_CONTROL) || IsVirtualKeyDown(VK_LCONTROL) || IsVirtualKeyDown(VK_RCONTROL))
+    {
+        modifiers |= MOD_CONTROL;
+    }
+    if (IsVirtualKeyDown(VK_MENU) || IsVirtualKeyDown(VK_LMENU) || IsVirtualKeyDown(VK_RMENU))
+    {
+        modifiers |= MOD_ALT;
+    }
+    if (IsVirtualKeyDown(VK_SHIFT) || IsVirtualKeyDown(VK_LSHIFT) || IsVirtualKeyDown(VK_RSHIFT))
+    {
+        modifiers |= MOD_SHIFT;
+    }
+    if (IsVirtualKeyDown(VK_LWIN) || IsVirtualKeyDown(VK_RWIN))
+    {
+        modifiers |= MOD_WIN;
+    }
+    return modifiers;
+}
+
+std::optional<HotkeySpec> HotkeySpecFromRecordedKey(UINT modifiers, UINT vk)
+{
+    if (modifiers == 0 || IsModifierVirtualKey(vk) || vk == VK_ESCAPE)
+    {
+        return std::nullopt;
+    }
+    const auto key_label = HotkeyKeyLabelFromVk(vk);
+    if (!key_label.has_value())
+    {
+        return std::nullopt;
+    }
+
+    HotkeySpec spec;
+    spec.modifiers = modifiers;
+    spec.vk = vk;
+    spec.display = FormatHotkeyDisplay(modifiers, *key_label);
     return spec;
 }
 
@@ -3934,6 +4086,35 @@ int RunSelfTest()
     {
         std::cout << "[PASS] append payload batch sizing\n";
     }
+
+    try
+    {
+        fs::path temp_config = fs::temp_directory_path();
+        temp_config /= L"notion_clipboard_win_config_self_test.ini";
+        AtomicWriteFile(temp_config, "notion_token=secret_should_stay\nhotkey=Ctrl+Shift+B\n");
+        UpsertConfigValue(temp_config, "hotkey", "Ctrl+Alt+U");
+        UpsertConfigValue(temp_config, "tray_notifications", "false");
+        const std::string saved_config = ReadWholeFile(temp_config);
+        std::error_code ignored;
+        fs::remove(temp_config, ignored);
+        if (saved_config.find("notion_token=secret_should_stay") == std::string::npos ||
+            saved_config.find("hotkey=Ctrl+Alt+U") == std::string::npos ||
+            saved_config.find("tray_notifications=false") == std::string::npos)
+        {
+            std::cout << "[FAIL] config value upsert preserves existing settings\n";
+            ok = false;
+        }
+        else
+        {
+            std::cout << "[PASS] config value upsert preserves existing settings\n";
+        }
+    }
+    catch (const std::exception &ex)
+    {
+        std::cout << "[FAIL] config value upsert preserves existing settings: " << ex.what() << "\n";
+        ok = false;
+    }
+
     std::cout << (ok ? "self-test passed\n" : "self-test failed\n");
     return ok ? 0 : 1;
 }
@@ -4757,6 +4938,7 @@ public:
           logger_(logger),
           hotkey_spec_(ParseHotkeyOrThrow(config->hotkey)),
           hotkey_enabled_(config->enable_hotkey),
+          notifications_enabled_(config->tray_notifications),
           clipboard_listener_enabled_(config->enable_clipboard_listener)
     {
     }
@@ -4836,6 +5018,37 @@ private:
             return DefWindowProcW(hwnd, message, wparam, lparam);
         }
         return self->HandleMessage(hwnd, message, wparam, lparam);
+    }
+
+    static LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam)
+    {
+        TrayApplication *self = recording_instance_;
+        if (code == HC_ACTION && self != nullptr && self->recording_hotkey_ &&
+            (wparam == WM_KEYDOWN || wparam == WM_SYSKEYDOWN))
+        {
+            const auto *info = reinterpret_cast<KBDLLHOOKSTRUCT *>(lparam);
+            const UINT vk = static_cast<UINT>(info->vkCode);
+            if (vk == VK_ESCAPE)
+            {
+                self->CancelHotkeyRecording();
+                return 1;
+            }
+            if (IsModifierVirtualKey(vk))
+            {
+                return CallNextHookEx(self->keyboard_hook_, code, wparam, lparam);
+            }
+
+            const auto spec = HotkeySpecFromRecordedKey(CurrentHotkeyModifiers(), vk);
+            if (spec.has_value())
+            {
+                self->ApplyRecordedHotkey(*spec);
+                return 1;
+            }
+
+            self->ShowNotification(L"Notion Clipboard Win", L"热键需要包含 Ctrl/Alt/Shift/Win 和支持的主按键。");
+            return 1;
+        }
+        return CallNextHookEx(self == nullptr ? nullptr : self->keyboard_hook_, code, wparam, lparam);
     }
 
     LRESULT HandleMessage(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam)
@@ -4929,7 +5142,7 @@ private:
 
     void ShowNotification(const std::wstring &title, const std::wstring &message)
     {
-        if (!config_->tray_notifications || !tray_icon_added_)
+        if (!notifications_enabled_ || !tray_icon_added_)
         {
             return;
         }
@@ -5028,6 +5241,9 @@ private:
         AppendMenuW(menu, MF_STRING, kMenuUploadNow, L"上传当前剪贴板");
         AppendMenuW(menu, MF_GRAYED, kMenuHotkeyStatus, hotkey_label.c_str());
         AppendMenuW(menu, MF_STRING | (hotkey_enabled_ ? MF_CHECKED : MF_UNCHECKED), kMenuToggleHotkey, L"启用热键");
+        AppendMenuW(menu, MF_STRING | (recording_hotkey_ ? MF_GRAYED : MF_ENABLED), kMenuRecordHotkey, L"录制热键...");
+        AppendMenuW(menu, MF_STRING | (notifications_enabled_ ? MF_CHECKED : MF_UNCHECKED), kMenuToggleNotifications,
+                    L"显示通知");
         AppendMenuW(menu, MF_STRING | (clipboard_listener_enabled_ ? MF_CHECKED : MF_UNCHECKED),
                     kMenuToggleClipboardListener, L"自动监听剪贴板");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -5053,6 +5269,12 @@ private:
             break;
         case kMenuToggleHotkey:
             ToggleHotkey();
+            break;
+        case kMenuRecordHotkey:
+            StartHotkeyRecording();
+            break;
+        case kMenuToggleNotifications:
+            ToggleNotifications();
             break;
         case kMenuToggleClipboardListener:
             EnableClipboardListener(!clipboard_listener_enabled_);
@@ -5095,6 +5317,150 @@ private:
         hotkey_enabled_ = RegisterUploadHotkey();
     }
 
+    bool PersistConfigValue(const std::string &key, const std::string &value)
+    {
+        try
+        {
+            UpsertConfigValue(config_path_, key, value);
+            return true;
+        }
+        catch (const std::exception &ex)
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Warn("写入配置失败: " + key + "=" + value + "，原因: " + std::string(ex.what()));
+            }
+            return false;
+        }
+    }
+
+    void StopHotkeyRecordingHook()
+    {
+        if (keyboard_hook_ != nullptr)
+        {
+            UnhookWindowsHookEx(keyboard_hook_);
+            keyboard_hook_ = nullptr;
+        }
+        if (recording_instance_ == this)
+        {
+            recording_instance_ = nullptr;
+        }
+        recording_hotkey_ = false;
+    }
+
+    void StartHotkeyRecording()
+    {
+        if (recording_hotkey_)
+        {
+            return;
+        }
+
+        const int result = MessageBoxW(hwnd_,
+                                       L"点击“确定”后按下新的全局热键。\n\n"
+                                       L"要求：Ctrl/Alt/Shift/Win 至少一个修饰键 + 一个主按键。\n"
+                                       L"按 Esc 取消录制。",
+                                       L"录制热键", MB_OKCANCEL | MB_ICONINFORMATION | MB_TOPMOST);
+        if (result != IDOK)
+        {
+            return;
+        }
+
+        restore_hotkey_enabled_after_recording_ = hotkey_enabled_;
+        if (hotkey_registered_)
+        {
+            UnregisterHotKey(hwnd_, kUploadHotkeyId);
+            hotkey_registered_ = false;
+        }
+
+        recording_hotkey_ = true;
+        recording_instance_ = this;
+        keyboard_hook_ = SetWindowsHookExW(WH_KEYBOARD_LL, &TrayApplication::KeyboardHookProc,
+                                           GetModuleHandleW(nullptr), 0);
+        if (keyboard_hook_ == nullptr)
+        {
+            const std::string error = LastErrorMessage();
+            StopHotkeyRecordingHook();
+            if (restore_hotkey_enabled_after_recording_)
+            {
+                hotkey_enabled_ = RegisterUploadHotkey();
+            }
+            if (logger_ != nullptr)
+            {
+                logger_->Error("启动热键录制失败: " + error);
+            }
+            MessageBoxW(hwnd_, L"启动热键录制失败，请查看日志。", L"Notion Clipboard Win",
+                        MB_OK | MB_ICONERROR | MB_TOPMOST);
+            return;
+        }
+
+        if (logger_ != nullptr)
+        {
+            logger_->Info("开始录制全局热键");
+        }
+        ShowNotification(L"Notion Clipboard Win", L"正在录制热键，按 Esc 取消。");
+    }
+
+    void CancelHotkeyRecording()
+    {
+        StopHotkeyRecordingHook();
+        if (restore_hotkey_enabled_after_recording_)
+        {
+            hotkey_enabled_ = RegisterUploadHotkey();
+        }
+        if (logger_ != nullptr)
+        {
+            logger_->Info("热键录制已取消");
+        }
+        ShowNotification(L"Notion Clipboard Win", L"热键录制已取消。");
+    }
+
+    void ApplyRecordedHotkey(const HotkeySpec &new_spec)
+    {
+        const HotkeySpec previous_spec = hotkey_spec_;
+        const bool previous_enabled = restore_hotkey_enabled_after_recording_;
+        StopHotkeyRecordingHook();
+
+        hotkey_spec_ = new_spec;
+        hotkey_enabled_ = true;
+        if (!RegisterUploadHotkey())
+        {
+            hotkey_spec_ = previous_spec;
+            hotkey_enabled_ = previous_enabled;
+            if (previous_enabled)
+            {
+                hotkey_enabled_ = RegisterUploadHotkey();
+            }
+            MessageBoxW(hwnd_, L"新热键注册失败，可能已被其他程序占用；已恢复原热键。", L"Notion Clipboard Win",
+                        MB_OK | MB_ICONWARNING | MB_TOPMOST);
+            return;
+        }
+
+        PersistConfigValue("hotkey", hotkey_spec_.display);
+        PersistConfigValue("enable_hotkey", "true");
+        if (logger_ != nullptr)
+        {
+            logger_->Info("全局热键已更新: " + hotkey_spec_.display);
+        }
+        std::wstring message = L"热键已更新为 ";
+        message += Utf8ToWide(hotkey_spec_.display);
+        message += L"。";
+        ShowNotification(L"Notion Clipboard Win", message);
+    }
+
+    void ToggleNotifications()
+    {
+        notifications_enabled_ = !notifications_enabled_;
+        PersistConfigValue("tray_notifications", notifications_enabled_ ? "true" : "false");
+        if (logger_ != nullptr)
+        {
+            logger_->Info(std::string("托盘通知已") + (notifications_enabled_ ? "启用" : "关闭"));
+        }
+        if (notifications_enabled_)
+        {
+            ShowNotification(L"Notion Clipboard Win", L"托盘通知已启用。");
+        }
+    }
+
     void OpenConfig()
     {
         if (!fs::exists(config_path_))
@@ -5111,7 +5477,8 @@ private:
                                              "database_id=\n"
                                              "hotkey=Ctrl+Shift+B\n"
                                              "enable_hotkey=true\n"
-                                             "enable_clipboard_listener=false\n");
+                                             "enable_clipboard_listener=false\n"
+                                             "tray_notifications=true\n");
             }
             catch (const std::exception &ex)
             {
@@ -5188,6 +5555,7 @@ private:
             return;
         }
         cleaned_up_ = true;
+        StopHotkeyRecordingHook();
 
         if (hwnd_ != nullptr)
         {
@@ -5224,11 +5592,18 @@ private:
     UINT taskbar_created_message_ = 0;
     bool hotkey_enabled_ = true;
     bool hotkey_registered_ = false;
+    bool notifications_enabled_ = true;
     bool clipboard_listener_enabled_ = false;
     bool clipboard_listener_registered_ = false;
     bool tray_icon_added_ = false;
     bool cleaned_up_ = false;
+    bool recording_hotkey_ = false;
+    bool restore_hotkey_enabled_after_recording_ = false;
+    HHOOK keyboard_hook_ = nullptr;
+    static TrayApplication *recording_instance_;
 };
+
+TrayApplication *TrayApplication::recording_instance_ = nullptr;
 
 DWORD g_main_thread_id = 0;
 

@@ -144,6 +144,8 @@ enable_clipboard_listener=true
 - 上传当前剪贴板。
 - 查看当前热键。
 - 临时启用/暂停热键。
+- 录制新热键：按托盘菜单“录制热键...”，确认后按新的组合键，`Esc` 取消；成功后会写回配置并立即重新注册。
+- 启用/关闭托盘通知，设置会写回 `tray_notifications`。
 - 临时启用/暂停自动监听剪贴板。
 - 打开配置、日志和状态目录。
 - 退出程序。
@@ -153,6 +155,7 @@ enable_clipboard_listener=true
 可在 `notion_clipboard_win.ini` 中调节：
 
 - `hotkey`：全局热键，默认 `Ctrl+Shift+B`。
+- `tray_notifications`：是否显示托盘气泡通知，默认开启；也可通过托盘菜单即时切换。
 - `enable_clipboard_listener`：是否复制后自动入队上传，默认关闭。
 - `created_time_property_name`：如果存在同名 `date` 属性，创建页面时自动写入任务创建时间；如果是 Notion 内置 `created_time` 类型，则由 Notion 自动填写。
 - `debounce_ms`：合并一次复制产生的多次剪贴板事件。
