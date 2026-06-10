@@ -23,7 +23,7 @@ Windows 原生剪贴板上传工具。程序常驻后台托盘，按全局热键
 
 - 普通文本、标题、段落、分隔线。
 - Markdown 列表、任务列表、引用块、代码块。
-- Markdown 表格会保守上传为 `plain text` 代码块。
+- Markdown 表格和无分隔行的管道表格会优先上传为 Notion 原生表格；异常复杂时降级为 `plain text` 代码块。
 - 行内公式：`$...$`、`\(...\)`。
 - 独立公式：`$$...$$`、`\[...\]`、`equation` / `align` / `gather` 环境。
 - 常见 Unicode 数学符号会做保守 LaTeX 修复，例如 `≤`、`≥`、`∫`、`α`。
@@ -230,4 +230,4 @@ Notion API 没有通用写入幂等键。本程序会在页面创建成功后立
 
 ## 回归测试覆盖
 
-本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、HTML 列表项段落、代码语言降级、Markdown/LaTeX、任务列表、引用块、表格保守保留、多行内公式拆分、超长代码块拆分、超长公式降级、货币 `$` 误判、inline code 中的 `$`、URL/path 中的 `$`、多反引号 code span、Windows 路径、HTML 数字实体、KaTeX/MathJax、script/style 污染、append 请求体切分和配置单项写回。
+本地 `--self-test` 覆盖普通算法讲解、HTML 空代码块污染、HTML 列表项段落、代码语言降级、Markdown/LaTeX、任务列表、引用块、标准表格和无分隔行管道表格、多行内公式拆分、超长代码块拆分、超长公式降级、货币 `$` 误判、inline code 中的 `$`、URL/path 中的 `$`、多反引号 code span、Windows 路径、HTML 数字实体、KaTeX/MathJax、script/style 污染、append 请求体切分和配置单项写回。

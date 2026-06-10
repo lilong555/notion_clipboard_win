@@ -23,7 +23,7 @@ A native Windows clipboard uploader for Notion. It runs as a background tray pro
 
 - Plain text, headings, paragraphs, and dividers.
 - Markdown bullet lists, numbered lists, to-do lists, quote blocks, and fenced code blocks.
-- Markdown tables are preserved as `plain text` code blocks.
+- Markdown tables and separator-less pipe tables are uploaded as native Notion tables when possible; unusually complex tables fall back to `plain text` code blocks.
 - Inline formulas: `$...$`, `\(...\)`.
 - Display formulas: `$$...$$`, `\[...\]`, `equation` / `align` / `gather` environments.
 - Conservative LaTeX repair for common Unicode math symbols such as `≤`, `≥`, `∫`, and `α`.
@@ -230,4 +230,4 @@ The Notion API does not provide a general write idempotency key. This app record
 
 ## Regression Coverage
 
-Local `--self-test` covers algorithm explanation text, HTML empty code artifacts, HTML list item paragraphs, code language fallback, Markdown/LaTeX, tasks, quotes, table preservation, many inline equations, long code splitting, long formula fallback, literal dollar signs, inline code dollar signs, URL/path dollar signs, multi-backtick code spans, Windows paths, HTML numeric entities, KaTeX/MathJax, script/style pollution, append request body splitting, and single-value config persistence.
+Local `--self-test` covers algorithm explanation text, HTML empty code artifacts, HTML list item paragraphs, code language fallback, Markdown/LaTeX, tasks, quotes, standard tables and separator-less pipe tables, many inline equations, long code splitting, long formula fallback, literal dollar signs, inline code dollar signs, URL/path dollar signs, multi-backtick code spans, Windows paths, HTML numeric entities, KaTeX/MathJax, script/style pollution, append request body splitting, and single-value config persistence.

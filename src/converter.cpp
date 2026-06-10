@@ -582,6 +582,7 @@ struct MarkdownBlock
         ToDo,
         Divider,
         Equation,
+        Table,
         Code,
     };
     Type type = Type::Paragraph;
@@ -683,7 +684,108 @@ bool IsQuoteLine(const std::string &line)
 bool IsMarkdownTableLine(const std::string &line)
 {
     const std::string trimmed = Trim(line);
-    return trimmed.size() >= 3 && trimmed.find('|') != std::string::npos;
+    if (trimmed.size() < 3 || trimmed.find('|') == std::string::npos)
+    {
+        return false;
+    }
+
+    const std::size_t pipe_count = static_cast<std::size_t>(std::count(trimmed.begin(), trimmed.end(), '|'));
+    if (trimmed.front() != '|' && trimmed.back() != '|' && pipe_count < 2)
+    {
+        return false;
+    }
+
+    std::size_t columns = 0;
+    bool has_content = false;
+    std::size_t start = 0;
+    while (start <= trimmed.size())
+    {
+        const std::size_t end = trimmed.find('|', start);
+        const std::string cell = Trim(trimmed.substr(start, end == std::string::npos ? std::string::npos : end - start));
+        if (!((start == 0 && trimmed.front() == '|') || (end == std::string::npos && trimmed.back() == '|')))
+        {
+            ++columns;
+            has_content = has_content || !cell.empty();
+        }
+        if (end == std::string::npos)
+        {
+            break;
+        }
+        start = end + 1;
+    }
+    return columns >= 2 && has_content;
+}
+
+std::vector<std::string> SplitMarkdownTableCells(const std::string &line)
+{
+    std::vector<std::string> cells;
+    if (!IsMarkdownTableLine(line))
+    {
+        return cells;
+    }
+
+    const std::string trimmed = Trim(line);
+    std::size_t start = 0;
+    while (start <= trimmed.size())
+    {
+        const std::size_t end = trimmed.find('|', start);
+        if (!((start == 0 && trimmed.front() == '|') || (end == std::string::npos && trimmed.back() == '|')))
+        {
+            cells.push_back(Trim(trimmed.substr(start, end == std::string::npos ? std::string::npos : end - start)));
+        }
+        if (end == std::string::npos)
+        {
+            break;
+        }
+        start = end + 1;
+    }
+    return cells;
+}
+
+std::optional<std::size_t> MarkdownTableColumnCount(const std::string &line)
+{
+    const std::vector<std::string> cells = SplitMarkdownTableCells(line);
+    if (cells.empty())
+    {
+        return std::nullopt;
+    }
+    return cells.size();
+}
+
+bool IsMarkdownTableSeparatorLine(const std::string &line)
+{
+    const std::vector<std::string> cells = SplitMarkdownTableCells(line);
+    if (cells.size() < 2)
+    {
+        return false;
+    }
+
+    for (const std::string &cell : cells)
+    {
+        if (std::count(cell.begin(), cell.end(), '-') < 3)
+        {
+            return false;
+        }
+        for (const char ch : cell)
+        {
+            if (ch != '-' && ch != ':' && !IsAsciiSpace(ch))
+            {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
+bool IsMarkdownTableStart(const std::vector<std::string> &lines, std::size_t index)
+{
+    if (index + 1 >= lines.size() || IsMarkdownTableSeparatorLine(lines[index]))
+    {
+        return false;
+    }
+    const std::optional<std::size_t> columns = MarkdownTableColumnCount(lines[index]);
+    const std::optional<std::size_t> next_columns = MarkdownTableColumnCount(lines[index + 1]);
+    return columns.has_value() && next_columns.has_value() && *columns == *next_columns;
 }
 
 bool IsParagraphBoundary(const std::string &line)
@@ -1070,18 +1172,23 @@ std::vector<MarkdownBlock> ParseMarkdownBlocks(const std::string &content)
             continue;
         }
 
-        if (IsMarkdownTableLine(line) && i + 1 < lines.size() && IsMarkdownTableLine(lines[i + 1]) &&
-            lines[i + 1].find("---") != std::string::npos)
+        if (IsMarkdownTableStart(lines, i))
         {
+            const std::size_t expected_columns = *MarkdownTableColumnCount(line);
             std::string table = line;
             ++i;
-            while (i < lines.size() && IsMarkdownTableLine(lines[i]))
+            while (i < lines.size())
             {
+                const std::optional<std::size_t> columns = MarkdownTableColumnCount(lines[i]);
+                if (!columns.has_value() || *columns != expected_columns)
+                {
+                    break;
+                }
                 table += "\n";
                 table += lines[i];
                 ++i;
             }
-            blocks.push_back({MarkdownBlock::Type::Code, {}, table, "plain text"});
+            blocks.push_back({MarkdownBlock::Type::Table, {}, table, ""});
             continue;
         }
 
@@ -1336,6 +1443,123 @@ void AppendEquationBlocks(std::vector<std::string> *blocks, const std::string &e
     AppendCodeBlocks(blocks, repaired, "latex");
 }
 
+bool BuildTableCellJson(const std::string &cell, std::string *json)
+{
+    const std::vector<InlineSegment> normalized = NormalizeRichTextSegmentsForNotion(ParseInlineMarkdown(cell));
+    if (normalized.size() > 90)
+    {
+        return false;
+    }
+    *json = BuildRichTextJson(normalized);
+    return true;
+}
+
+bool BuildTableRowJson(const std::vector<std::string> &row, std::size_t width, std::string *json)
+{
+    std::ostringstream oss;
+    oss << "{\"object\":\"block\",\"type\":\"table_row\",\"table_row\":{\"cells\":[";
+    for (std::size_t column = 0; column < width; ++column)
+    {
+        if (column > 0)
+        {
+            oss << ",";
+        }
+        std::string cell_json;
+        if (!BuildTableCellJson(column < row.size() ? row[column] : "", &cell_json))
+        {
+            return false;
+        }
+        oss << cell_json;
+    }
+    oss << "]}}";
+    *json = oss.str();
+    return true;
+}
+
+bool BuildTableBlock(const std::vector<std::vector<std::string>> &rows, std::size_t begin, std::size_t end,
+                     std::size_t width, bool has_column_header, std::string *json)
+{
+    if (begin >= end || width == 0)
+    {
+        return false;
+    }
+
+    std::ostringstream oss;
+    oss << "{\"object\":\"block\",\"type\":\"table\",\"table\":{\"table_width\":" << width
+        << ",\"has_column_header\":" << (has_column_header ? "true" : "false")
+        << ",\"has_row_header\":false,\"children\":[";
+    for (std::size_t row = begin; row < end; ++row)
+    {
+        if (row > begin)
+        {
+            oss << ",";
+        }
+        std::string row_json;
+        if (!BuildTableRowJson(rows[row], width, &row_json))
+        {
+            return false;
+        }
+        oss << row_json;
+    }
+    oss << "]}}";
+    *json = oss.str();
+    return true;
+}
+
+void AppendTableBlocks(std::vector<std::string> *blocks, const std::string &table_text)
+{
+    const std::vector<std::string> lines = SplitLinesPreserveEmpty(NormalizeLineEndings(table_text));
+    std::vector<std::vector<std::string>> rows;
+    std::size_t width = 0;
+    for (const std::string &line : lines)
+    {
+        if (IsMarkdownTableSeparatorLine(line))
+        {
+            continue;
+        }
+        std::vector<std::string> cells = SplitMarkdownTableCells(line);
+        if (cells.empty())
+        {
+            continue;
+        }
+        if (width == 0)
+        {
+            width = cells.size();
+        }
+        if (cells.size() < width)
+        {
+            cells.resize(width);
+        }
+        else if (cells.size() > width)
+        {
+            cells.resize(width);
+        }
+        rows.push_back(std::move(cells));
+    }
+
+    if (rows.empty() || width == 0)
+    {
+        AppendCodeBlocks(blocks, table_text, "plain text");
+        return;
+    }
+
+    const bool has_column_header = rows.size() >= 2;
+    const std::size_t max_rows_per_block = std::max<std::size_t>(1, 90 / width);
+    std::size_t begin = 0;
+    while (begin < rows.size())
+    {
+        const std::size_t end = std::min(rows.size(), begin + max_rows_per_block);
+        std::string table_json;
+        if (!BuildTableBlock(rows, begin, end, width, has_column_header && begin == 0, &table_json))
+        {
+            AppendCodeBlocks(blocks, table_text, "plain text");
+            return;
+        }
+        blocks->push_back(std::move(table_json));
+        begin = end;
+    }
+}
+
 std::vector<std::string> BuildTextBlocks(const std::string &content)
 {
     const std::vector<MarkdownBlock> markdown_blocks = ParseMarkdownBlocks(content);
@@ -1374,6 +1598,9 @@ std::vector<std::string> BuildTextBlocks(const std::string &content)
             break;
         case MarkdownBlock::Type::Equation:
             AppendEquationBlocks(&blocks, block.text);
+            break;
+        case MarkdownBlock::Type::Table:
+            AppendTableBlocks(&blocks, block.text);
             break;
         case MarkdownBlock::Type::Code:
             AppendCodeBlocks(&blocks, block.text, block.language);
@@ -2167,6 +2394,21 @@ int RunSelfTest()
 
     std::string unclosed_code = "```cpp\nint main() { return 0; }\n";
 
+    const std::string loose_pipe_table =
+        "| 常见科目 | 通俗理解 | 借方 | 贷方\n"
+        "| 库存现金 | 手里的现金 | 增加 | 减少\n"
+        "| 银行存款 | 银行账户里的钱 | 增加 | 减少\n"
+        "| 应收账款 | 客户欠我的钱 | 增加 | 减少\n"
+        "| 应收票据 | 客户给我的商业汇票 | 增加 | 减少\n"
+        "| 预付账款 | 我先付给供应商的钱 | 增加 | 减少\n"
+        "| 其他应收款 | 员工借款、赔偿款等 | 增加 | 减少\n"
+        "| 原材料 | 买来的材料 | 增加 | 减少\n"
+        "| 库存商品 | 已完工、可出售的商品 | 增加 | 减少\n"
+        "| 固定资产 | 机器、设备、房屋 | 增加 | 减少\n"
+        "| 累计折旧 | 固定资产备抵科目 | 减少 | 增加\n"
+        "| 无形资产 | 专利、商标、软件等 | 增加 | 减少\n"
+        "| 累计摊销 | 无形资产备抵科目 | 减少 | 增加";
+
     const std::vector<ConversionTestCase> tests = {
         {"plain algorithm explanation",
          "对，这题正解就是：SCC 缩点成 DAG，然后在 DAG 上做最大路径和 DP。\n\n"
@@ -2214,12 +2456,21 @@ int RunSelfTest()
         {"tasks quotes and table",
          "> 引用里有公式 $a^2+b^2=c^2$\n\n- [x] 已完成\n- [ ] 待办\n\n| A | B |\n|---|---|\n| $x$ | y |\n",
          "引用里有公式 $a^2+b^2=c^2$",
-         1,
-         1,
+         2,
+         0,
          2,
          1,
-         {"\"checked\":true", "\"checked\":false", "\"language\":\"plain text\""},
+         {"\"checked\":true", "\"checked\":false", "\"type\":\"table\"", "\"type\":\"table_row\""},
          {"\"language\":\"markdown\""}},
+        {"loose pipe table without separator",
+         loose_pipe_table,
+         "",
+         0,
+         0,
+         0,
+         0,
+         {"\"type\":\"table\"", "\"type\":\"table_row\"", "库存现金", "累计摊销"},
+         {"\"language\":\"markdown\"", "\"type\":\"equation\"", "\"type\":\"code\""}},
         {"many inline equations split safely",
          many_inline_equations,
          "Many equations",
