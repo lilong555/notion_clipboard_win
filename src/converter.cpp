@@ -788,6 +788,47 @@ bool IsMarkdownTableStart(const std::vector<std::string> &lines, std::size_t ind
     return columns.has_value() && next_columns.has_value() && *columns == *next_columns;
 }
 
+bool IsPlainTableFenceLanguage(const std::string &language)
+{
+    const std::string normalized = ToLowerAscii(Trim(language));
+    return normalized.empty() || normalized == "text" || normalized == "txt" || normalized == "plain" ||
+           normalized == "plaintext" || normalized == "plain text";
+}
+
+bool IsMarkdownTableText(const std::string &text)
+{
+    const std::vector<std::string> lines = SplitLinesPreserveEmpty(NormalizeLineEndings(text));
+    std::vector<std::string> table_lines;
+    table_lines.reserve(lines.size());
+    for (const std::string &line : lines)
+    {
+        if (!Trim(line).empty())
+        {
+            table_lines.push_back(line);
+        }
+    }
+
+    if (table_lines.size() < 2 || !IsMarkdownTableStart(table_lines, 0))
+    {
+        return false;
+    }
+
+    const std::optional<std::size_t> expected_columns = MarkdownTableColumnCount(table_lines.front());
+    if (!expected_columns.has_value())
+    {
+        return false;
+    }
+    for (const std::string &line : table_lines)
+    {
+        const std::optional<std::size_t> columns = MarkdownTableColumnCount(line);
+        if (!columns.has_value() || *columns != *expected_columns)
+        {
+            return false;
+        }
+    }
+    return true;
+}
+
 bool IsParagraphBoundary(const std::string &line)
 {
     const std::string trimmed = Trim(line);
@@ -1070,7 +1111,12 @@ std::vector<MarkdownBlock> ParseMarkdownBlocks(const std::string &content)
                 code += lines[i];
                 ++i;
             }
-            blocks.push_back({MarkdownBlock::Type::Code, {}, code, language});
+            blocks.push_back({IsPlainTableFenceLanguage(language) && IsMarkdownTableText(code)
+                                  ? MarkdownBlock::Type::Table
+                                  : MarkdownBlock::Type::Code,
+                              {},
+                              code,
+                              language});
             continue;
         }
 
@@ -2408,6 +2454,7 @@ int RunSelfTest()
         "| 累计折旧 | 固定资产备抵科目 | 减少 | 增加\n"
         "| 无形资产 | 专利、商标、软件等 | 增加 | 减少\n"
         "| 累计摊销 | 无形资产备抵科目 | 减少 | 增加";
+    const std::string fenced_pipe_table = "```\n" + loose_pipe_table + "\n```";
 
     const std::vector<ConversionTestCase> tests = {
         {"plain algorithm explanation",
@@ -2471,6 +2518,15 @@ int RunSelfTest()
          0,
          {"\"type\":\"table\"", "\"type\":\"table_row\"", "库存现金", "累计摊销"},
          {"\"language\":\"markdown\"", "\"type\":\"equation\"", "\"type\":\"code\""}},
+        {"fenced pipe table becomes native table",
+         fenced_pipe_table,
+         "",
+         0,
+         0,
+         0,
+         0,
+         {"\"type\":\"table\"", "\"type\":\"table_row\"", "库存现金", "累计摊销"},
+         {"\"language\":\"markdown\"", "\"type\":\"code\""}},
         {"many inline equations split safely",
          many_inline_equations,
          "Many equations",

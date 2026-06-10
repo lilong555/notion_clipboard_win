@@ -24,6 +24,7 @@ A native Windows clipboard uploader for Notion. It runs as a background tray pro
 - Plain text, headings, paragraphs, and dividers.
 - Markdown bullet lists, numbered lists, to-do lists, quote blocks, and fenced code blocks.
 - Markdown tables and separator-less pipe tables are uploaded as native Notion tables when possible; unusually complex tables fall back to `plain text` code blocks.
+- Tables wrapped in empty-language or `text` code fences are also recognized as tables, which helps with table snippets copied from chat tools.
 - Inline formulas: `$...$`, `\(...\)`.
 - Display formulas: `$$...$$`, `\[...\]`, `equation` / `align` / `gather` environments.
 - Conservative LaTeX repair for common Unicode math symbols such as `≤`, `≥`, `∫`, and `α`.
