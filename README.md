@@ -48,7 +48,11 @@ Notion Clipboard Win 是一个 Windows 原生剪贴板上传工具。它常驻�
 notion_clipboard_win/
   CMakeLists.txt          CMake 构建入口
   build-release.bat       Release 托盘版构建脚本
+  VERSION                 发布版本号的单一来源
   config.example.ini      配置模板，不包含真实凭据
+  LICENSE                 个人免费、商用授权许可证
+  installer/              Inno Setup 安装包脚本
+  scripts/                发布构建脚本
   src/                    C++17 Win32 源码
     main.cpp              托盘、CLI、剪贴板、上传线程
     converter.cpp         Markdown/HTML/LaTeX 转换与自测
@@ -58,6 +62,12 @@ notion_clipboard_win/
 ```
 
 ## 快速开始
+
+### 使用安装包
+
+从 GitHub Releases 下载 `NotionClipboardWin-0.1.0-Setup.exe`，安装后从开始菜单启动 `Notion Clipboard Win`。安装包不会创建或覆盖你的真实 `notion_clipboard_win.ini`，首次使用仍需要准备配置文件。
+
+### 从源码运行
 
 复制配置模板：
 
@@ -124,6 +134,20 @@ cmake --build build-console --config Release
 .\build\Release\notion_clipboard_win.exe --once --config .\notion_clipboard_win.ini
 .\build\Release\notion_clipboard_win.exe --validate-config --config .\notion_clipboard_win.ini
 .\build\Release\notion_clipboard_win.exe --help
+```
+
+生成安装包需要 Inno Setup 6：
+
+```powershell
+winget install JRSoftware.InnoSetup
+.\scripts\build-installer.ps1
+```
+
+脚本会构建 console 版、运行 `--self-test`、构建 GUI Release 版，然后生成：
+
+```text
+dist\NotionClipboardWin-0.1.0-Setup.exe
+dist\NotionClipboardWin-0.1.0-Setup.exe.sha256
 ```
 
 ## 配置
@@ -210,6 +234,25 @@ Notion API 没有通用写入幂等键。本程序会在远端资源创建成功
 - 转换逻辑尽量保持平台无关，不在 `converter.cpp` 引入 Win32 依赖。
 - 新增上传平台时实现 `UploadTarget`，不要把平台逻辑塞进剪贴板或队列模块。
 - 修改转换规则时补充 `--self-test` 用例，必要时更新 `test/` 样例。
+
+## 发布流程
+
+发布 `v0.1.0` 时按以下顺序验证：
+
+```powershell
+.\build-console\Release\notion_clipboard_win.exe --self-test
+.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
+.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\after.txt
+.\scripts\build-installer.ps1
+```
+
+在 GitHub Release 中上传安装包和 `.sha256` 文件。发布前确认没有提交真实 token、运行配置、日志、队列状态或本地状态目录。
+
+## 许可证
+
+本项目采用 source-available 授权模式，不是 MIT、Apache-2.0 等 OSI 开源许可证。个人、学习、研究、评估和其他非商业用途可以免费使用、复制、修改和分发；商业用途需要获得版权持有人的书面授权。
+
+商业授权请通过 GitHub 仓库联系版权持有人。完整条款见 [LICENSE](LICENSE)。
 
 ## 安全
 

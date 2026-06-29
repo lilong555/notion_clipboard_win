@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
-project(notion_clipboard_win LANGUAGES CXX)
+
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/VERSION" NCW_PROJECT_VERSION)
+string(STRIP "${NCW_PROJECT_VERSION}" NCW_PROJECT_VERSION)
+
+project(notion_clipboard_win VERSION "${NCW_PROJECT_VERSION}" LANGUAGES CXX)
 
 if(NOT WIN32)
     message(FATAL_ERROR "notion_clipboard_win 是 Windows 原生程序，请在 Windows/MSVC 或 MinGW 环境中构建。")
@@ -15,6 +19,11 @@ option(NOTION_CLIPBOARD_WIN_GUI "构建为无控制台窗口的后台程序" OFF
 
 set(APP_ICON_PATH_RC "${CMAKE_CURRENT_SOURCE_DIR}/assets/app.ico")
 set(RESOURCE_HEADER_PATH_RC "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h")
+set(NCW_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
+set(NCW_VERSION_MINOR "${PROJECT_VERSION_MINOR}")
+set(NCW_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
+set(NCW_VERSION_BUILD "0")
+set(NCW_VERSION_STRING "${PROJECT_VERSION}")
 configure_file(src/app.rc.in "${CMAKE_CURRENT_BINARY_DIR}/app.rc" @ONLY)
 
 add_executable(notion_clipboard_win

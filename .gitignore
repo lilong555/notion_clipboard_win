@@ -1,5 +1,6 @@
 build/
 build-console/
+dist/
 out/
 *.user
 *.log

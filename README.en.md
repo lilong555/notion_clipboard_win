@@ -48,7 +48,11 @@ The default workflow targets Notion, but the same queue and conversion pipeline 
 notion_clipboard_win/
   CMakeLists.txt          CMake entry point
   build-release.bat       Release tray build helper
+  VERSION                 Single source of truth for release version
   config.example.ini      Safe config template
+  LICENSE                 Personal-free, commercial-license terms
+  installer/              Inno Setup installer script
+  scripts/                Release build scripts
   src/                    C++17 Win32 source
     main.cpp              Tray, CLI, clipboard, upload worker
     converter.cpp         Markdown/HTML/LaTeX conversion and self-tests
@@ -58,6 +62,12 @@ notion_clipboard_win/
 ```
 
 ## Quick Start
+
+### Use The Installer
+
+Download `NotionClipboardWin-0.1.0-Setup.exe` from GitHub Releases, install it, and start `Notion Clipboard Win` from the Start menu. The installer does not create or overwrite your real `notion_clipboard_win.ini`; you still need to prepare a config file before first use.
+
+### Run From Source
 
 Copy the config template:
 
@@ -124,6 +134,20 @@ Common commands:
 .\build\Release\notion_clipboard_win.exe --once --config .\notion_clipboard_win.ini
 .\build\Release\notion_clipboard_win.exe --validate-config --config .\notion_clipboard_win.ini
 .\build\Release\notion_clipboard_win.exe --help
+```
+
+Building the installer requires Inno Setup 6:
+
+```powershell
+winget install JRSoftware.InnoSetup
+.\scripts\build-installer.ps1
+```
+
+The script builds the console binary, runs `--self-test`, builds the GUI Release binary, then produces:
+
+```text
+dist\NotionClipboardWin-0.1.0-Setup.exe
+dist\NotionClipboardWin-0.1.0-Setup.exe.sha256
 ```
 
 ## Configuration
@@ -210,6 +234,25 @@ Contribution expectations:
 - Keep conversion logic platform-independent; do not add Win32 dependencies to `converter.cpp`.
 - Add new platforms through `UploadTarget` implementations instead of clipboard or queue code.
 - Add `--self-test` coverage when changing conversion rules, and update `test/` samples when useful.
+
+## Release Process
+
+For `v0.1.0`, verify in this order:
+
+```powershell
+.\build-console\Release\notion_clipboard_win.exe --self-test
+.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
+.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\after.txt
+.\scripts\build-installer.ps1
+```
+
+Upload the installer and `.sha256` file to the GitHub Release. Before publishing, confirm that no real tokens, runtime configs, logs, queue state, or local state directories are committed.
+
+## License
+
+This project uses a source-available license. It is not licensed under MIT, Apache-2.0, or another OSI-approved open-source license. Personal, educational, research, evaluation, and other non-commercial use is free; commercial use requires written authorization from the copyright holder.
+
+For commercial authorization, contact the copyright holder through the GitHub repository. See [LICENSE](LICENSE) for the full terms.
 
 ## Security
 

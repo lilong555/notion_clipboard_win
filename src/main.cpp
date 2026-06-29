@@ -231,6 +231,30 @@ private:
     std::mutex wait_mutex_;
 };
 
+class DisabledUploadTarget : public UploadTarget
+{
+public:
+    explicit DisabledUploadTarget(std::string reason) : reason_(std::move(reason)) {}
+
+    std::string Name() const override
+    {
+        return "disabled";
+    }
+
+    void Validate() override
+    {
+        throw UploadFailure(reason_, false, 0);
+    }
+
+    void ProcessJob(UploadJob *, const std::function<void()> &) override
+    {
+        throw UploadFailure(reason_, false, 0);
+    }
+
+private:
+    std::string reason_;
+};
+
 class ClipboardReader
 {
 public:
@@ -395,12 +419,13 @@ class TrayApplication
 {
 public:
     TrayApplication(const AppConfig *config, fs::path config_path, PersistentQueue *queue, UploadWorker *worker,
-                    Logger *logger)
+                    Logger *logger, std::string startup_config_error)
         : config_(config),
           config_path_(std::move(config_path)),
           queue_(queue),
           worker_(worker),
           logger_(logger),
+          startup_config_error_(std::move(startup_config_error)),
           hotkey_spec_(ParseHotkeyOrThrow(config->hotkey)),
           hotkey_enabled_(config->enable_hotkey),
           notifications_enabled_(config->tray_notifications),
@@ -447,7 +472,7 @@ public:
             EnableClipboardListener(true);
         }
 
-        if (config_->upload_initial_clipboard)
+        if (startup_config_error_.empty() && config_->upload_initial_clipboard)
         {
             ProcessClipboard("启动读取", false);
         }
@@ -458,6 +483,7 @@ public:
                           "，clipboard_listener=" + (clipboard_listener_registered_ ? "on" : "off"));
         }
         ShowNotification(L"Notion Clipboard Win", L"后台进程已启动，按 " + Utf8ToWide(hotkey_spec_.display) + L" 上传剪贴板。");
+        MaybeShowStartupConfigError();
 
         MSG msg;
         while (GetMessageW(&msg, nullptr, 0, 0) > 0)
@@ -1071,6 +1097,24 @@ private:
         }
     }
 
+    void MaybeShowStartupConfigError()
+    {
+        if (startup_config_error_.empty())
+        {
+            return;
+        }
+        if (logger_ != nullptr)
+        {
+            logger_->Warn("配置尚未可用: " + startup_config_error_);
+        }
+        ShowNotification(L"Notion Clipboard Win", L"配置尚未完成，已打开配置页面。");
+        OpenConfigPage();
+        MessageBoxW(hwnd_, (L"配置尚未完成，上传功能暂不可用。\n\n" + Utf8ToWide(startup_config_error_) +
+                                L"\n\n请在配置页面填写必要项后重启程序。")
+                               .c_str(),
+                    L"Notion Clipboard Win", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
+    }
+
     void OpenPath(const fs::path &path)
     {
         const std::wstring target = path.wstring();
@@ -1087,6 +1131,20 @@ private:
 
     void ProcessClipboard(const char *trigger, bool user_initiated)
     {
+        if (!startup_config_error_.empty())
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Warn(std::string(trigger) + "上传被跳过，配置尚未完成: " + startup_config_error_);
+            }
+            if (user_initiated)
+            {
+                ShowNotification(L"Notion Clipboard Win", L"配置尚未完成，已打开配置页面。");
+                OpenConfigPage();
+            }
+            return;
+        }
+
         const auto text = reader_.ReadText(logger_, config_->max_clipboard_bytes);
         if (!text.has_value())
         {
@@ -1173,6 +1231,7 @@ private:
     PersistentQueue *queue_ = nullptr;
     UploadWorker *worker_ = nullptr;
     Logger *logger_ = nullptr;
+    std::string startup_config_error_;
     ClipboardReader reader_;
     HotkeySpec hotkey_spec_;
     std::string last_hash_;
@@ -1295,7 +1354,19 @@ int AppMain(int argc, wchar_t **argv)
     }
 
     AppConfig config = LoadConfig(cli.config_path);
-    ValidateConfigOrThrow(config);
+    std::string startup_config_error;
+    try
+    {
+        ValidateConfigOrThrow(config);
+    }
+    catch (const std::exception &ex)
+    {
+        if (cli.validate_config || cli.once)
+        {
+            throw;
+        }
+        startup_config_error = ex.what();
+    }
     fs::create_directories(config.state_dir);
 
 #ifdef NOTION_CLIPBOARD_WIN_GUI
@@ -1306,15 +1377,18 @@ int AppMain(int argc, wchar_t **argv)
     Logger logger(config.state_dir / L"notion-clipboard-win.log", mirror_console);
     logger.Info("程序启动，config=" + WideToUtf8(cli.config_path.wstring()));
 
-    PersistentQueue queue(config.state_dir, config.max_retry_attempts);
-    std::unique_ptr<UploadTarget> upload_target = CreateUploadTarget(config, &logger);
-
     if (cli.validate_config)
     {
+        std::unique_ptr<UploadTarget> upload_target = CreateUploadTarget(config, &logger);
         upload_target->Validate();
         logger.Info("配置验证通过");
         return 0;
     }
+
+    std::unique_ptr<UploadTarget> upload_target = startup_config_error.empty()
+                                                      ? CreateUploadTarget(config, &logger)
+                                                      : std::make_unique<DisabledUploadTarget>(startup_config_error);
+    PersistentQueue queue(config.state_dir, config.max_retry_attempts);
 
     if (cli.once)
     {
@@ -1322,19 +1396,28 @@ int AppMain(int argc, wchar_t **argv)
     }
 
     UploadWorker worker(&queue, upload_target.get(), &logger);
-    worker.Start();
+    if (startup_config_error.empty())
+    {
+        worker.Start();
+    }
     int code = 0;
     try
     {
-        TrayApplication app(&config, cli.config_path, &queue, &worker, &logger);
+        TrayApplication app(&config, cli.config_path, &queue, &worker, &logger, startup_config_error);
         code = app.Run();
     }
     catch (...)
     {
-        worker.Stop();
+        if (startup_config_error.empty())
+        {
+            worker.Stop();
+        }
         throw;
     }
-    worker.Stop();
+    if (startup_config_error.empty())
+    {
+        worker.Stop();
+    }
     return code;
 }
 } // 命名空间
