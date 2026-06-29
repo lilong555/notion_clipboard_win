@@ -10,7 +10,24 @@ struct AppConfig
 {
     AppConfig();
 
+    std::string upload_target = "notion";
     std::string notion_token;
+    std::string webhook_url;
+    std::string webhook_bearer_token;
+    std::string github_token;
+    bool github_gist_public = false;
+    std::string github_gist_filename_prefix = "clipboard";
+    std::string github_repo_owner;
+    std::string github_repo_name;
+    std::string github_repo_branch;
+    std::string github_repo_directory = "clipboard";
+    std::string github_repo_filename_prefix = "clipboard";
+    std::string yuque_token;
+    std::string yuque_namespace;
+    std::string yuque_slug_prefix = "clipboard";
+    std::string feishu_app_id;
+    std::string feishu_app_secret;
+    std::string feishu_folder_token;
     std::string data_source_id;
     std::string database_id;
     std::string title_property_name;
@@ -27,6 +44,14 @@ struct AppConfig
     int debounce_ms = 750;
     int duplicate_suppression_ms = 3000;
     bool upload_initial_clipboard = false;
+    std::filesystem::path markdown_output_dir;
+    std::filesystem::path obsidian_vault_dir;
+    std::string obsidian_folder = "Clipboard";
+    std::string obsidian_filename_prefix = "clipboard";
+    std::filesystem::path local_git_repo_dir;
+    std::string local_git_directory = "clipboard";
+    std::string local_git_filename_prefix = "clipboard";
+    bool local_git_auto_commit = false;
     std::uint64_t max_clipboard_bytes = 262144;
     int min_request_interval_ms = 400;
     int append_batch_size = 40;

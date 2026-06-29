@@ -10,8 +10,11 @@ namespace ncw
 std::string NormalizeLineEndings(std::string text);
 std::string TruncateUtf8(const std::string &text, std::size_t max_chars);
 std::string CollapseWhitespace(const std::string &text);
+std::string StripNonMathDollarMarkersForPlainText(const std::string &text);
 std::string BuildTitleFromContent(const std::string &content);
-std::string BuildTextRichText(const std::string &text, bool bold = false, bool code = false);
+std::string BuildTextRichText(const std::string &text, bool bold = false, bool code = false,
+                              bool strikethrough = false, const std::string &link_url = "", bool italic = false,
+                              bool underline = false, const std::string &color = "default");
 
 std::vector<std::string> BuildTextBlocks(const std::string &content);
 std::size_t SelectAppendBatchEnd(const std::vector<std::string> &blocks, std::size_t begin, std::size_t max_blocks,

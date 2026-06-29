@@ -36,13 +36,15 @@ class WinHttpClient
 public:
     WinHttpClient();
 
-    HttpResponse Request(const std::wstring &method, const std::wstring &path, const std::string &body) const;
-    void SetToken(std::string token);
+    HttpResponse RequestJsonUrl(const std::wstring &method, const std::string &url, const std::wstring &extra_headers,
+                                const std::string &body, const std::string &connection_name = "URL") const;
 
 private:
     static int ReadRetryAfterSeconds(HINTERNET request);
+    HttpResponse SendJsonRequest(const std::wstring &method, const std::wstring &host, INTERNET_PORT port,
+                                 const std::wstring &path, bool secure, const std::wstring &extra_headers,
+                                 const std::string &body, const std::string &connection_name) const;
 
     ScopedInternetHandle session_;
-    std::string notion_token_;
 };
 }

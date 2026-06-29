@@ -2,7 +2,7 @@
 
 语言：中文 | [English](README.en.md)
 
-Windows 原生剪贴板上传工具。程序常驻后台托盘，按全局热键读取当前剪贴板文本，将 Markdown、代码、LaTeX 公式和常见 HTML 剪贴板内容转换为 Notion blocks，并上传到指定 Notion 数据源的新页面。
+Windows 原生剪贴板上传工具。程序常驻后台托盘，按全局热键读取当前剪贴板文本，将 Markdown、代码、LaTeX 公式和常见 HTML 剪贴板内容转换后上传到配置的后端：Notion、本地 Markdown 文件、Obsidian、本地 Git、Webhook、GitHub Gist、GitHub 仓库、语雀或飞书文档。
 
 ## 功能亮点
 
@@ -14,10 +14,10 @@ Windows 原生剪贴板上传工具。程序常驻后台托盘，按全局热键
 - 可选使用 `AddClipboardFormatListener` 监听剪贴板事件，不做轮询。
 - 自动监听模式支持 debounce 和短时间重复抑制，减少一次复制触发多次上传。
 - 先写入持久队列，再由后台线程顺序上传，断网或程序退出后可继续重试。
-- 创建 Notion 页面后记录 `page_id`，正文按批追加并记录进度。
+- 上传后记录 `remote_id` / `remote_url` / `remote_progress`，用于跨后端恢复进度。
 - 支持 Notion `Retry-After`、HTTP 短重试和持久队列指数退避。
 - 默认限制剪贴板大小、请求间隔、每批 block 数量和请求体大小，降低性能峰值。
-- 不提交真实 Notion token，只提供空配置模板。
+- 不提交真实 Notion 或 GitHub token，只提供空配置模板。
 
 ## 支持的内容
 
@@ -171,18 +171,56 @@ cmake --build build-console --config Release
 常用配置：
 
 ```ini
+upload_target=notion
 notion_token=
+webhook_url=
+webhook_bearer_token=
+github_token=
+github_gist_public=false
+github_gist_filename_prefix=clipboard
+github_repo_owner=
+github_repo_name=
+github_repo_branch=
+github_repo_directory=clipboard
+github_repo_filename_prefix=clipboard
+yuque_token=
+yuque_namespace=
+yuque_slug_prefix=clipboard
+feishu_app_id=
+feishu_app_secret=
+feishu_folder_token=
 data_source_id=
 database_id=
 title_property_name=
 content_property_name=
 created_time_property_name=创建时间
+markdown_output_dir=
+obsidian_vault_dir=
+obsidian_folder=Clipboard
+obsidian_filename_prefix=clipboard
+local_git_repo_dir=
+local_git_directory=clipboard
+local_git_filename_prefix=clipboard
+local_git_auto_commit=false
 hotkey=Ctrl+Shift+B
 enable_hotkey=true
 enable_clipboard_listener=false
 tray_notifications=true
 start_with_windows=false
 ```
+
+上传后端：
+
+- `upload_target=notion`：默认后端，按当前配置上传为 Notion 页面。
+- `upload_target=markdown_file`：非 Notion 后端，直接把剪贴板内容写入本地 Markdown 文件。`markdown_output_dir` 留空时使用 `%LOCALAPPDATA%\NotionClipboardWin\markdown`。
+- `upload_target=obsidian`：写入 `obsidian_vault_dir` 指向的 Obsidian vault，可用 `obsidian_folder` 指定子目录。
+- `upload_target=local_git`：写入本地 Git 工作区。`local_git_auto_commit=true` 时会执行 `git add` 和 `git commit`，需要本机 `git` 可用且仓库已配置提交身份。
+- `upload_target=webhook`：向 `webhook_url` 发送通用 JSON payload，适合 n8n、Make、Zapier、Cloudflare Worker、自建 API 等中转。`webhook_bearer_token` 可选，设置后会作为 `Authorization: Bearer ...` 请求头发送。
+- `upload_target=github_gist`：用 `github_token` 调用 GitHub Gist API，每次上传创建一个 Markdown Gist。classic token 需要 `gist` scope；fine-grained token 需要 `Gists` user write 权限。`github_gist_public=false` 时创建 secret gist；`github_gist_filename_prefix` 控制文件名前缀。
+- `upload_target=github_repo`：用 `github_token` 调用 GitHub Contents API，把每次上传提交为仓库中的 Markdown 文件。classic token 需要 `repo` 或 public repo 对应权限；fine-grained token 需要目标仓库 `Contents` write 权限。`github_repo_owner` / `github_repo_name` 指定仓库，`github_repo_branch` 留空时使用默认分支，`github_repo_directory` 控制目录。
+- `upload_target=yuque`：用 `yuque_token` 调用语雀 Open API v2，在 `yuque_namespace` 指向的知识库中创建 Markdown 文档。`yuque_namespace` 通常形如 `login/repo-slug`。
+- `upload_target=feishu_doc`：用 `feishu_app_id` / `feishu_app_secret` 获取 tenant token，创建飞书文档并写入 Markdown 文本块。`feishu_folder_token` 留空时使用应用默认位置。
+- 后续接入 Obsidian、本地 Git 仓库、语雀、飞书文档等平台时，应新增上传后端实现，而不是把平台逻辑写进剪贴板、队列或转换器代码。
 
 开机自动启动：
 
@@ -195,7 +233,7 @@ start_with_windows=false
 - `debounce_ms`：合并一次复制产生的多次剪贴板事件，默认 `750`。
 - `duplicate_suppression_ms`：短时间忽略相同内容，默认 `3000`。
 - `max_clipboard_bytes`：跳过异常大的剪贴板文本，默认 `262144`。
-- `min_request_interval_ms`：限制 Notion 请求频率，默认 `400`。
+- `min_request_interval_ms`：限制上传后端 HTTP 请求频率，默认 `400`。
 - `append_batch_size`：每次追加的 block 数，默认 `40`，程序还会按约 400KB 请求体安全上限自动切分。
 - `max_retry_attempts`：持久队列最大重试次数。
 - `http_retry_attempts`：单个 HTTP 操作内部的短重试次数。
@@ -221,11 +259,11 @@ start_with_windows=false
 
 ## 可靠性说明
 
-Notion API 没有通用写入幂等键。本程序会在页面创建成功后立即记录 `page_id`，正文每批追加成功后记录 `appended_block_count`。如果网络在服务端已经写入但客户端还没收到响应时中断，极端情况下某个追加批次仍可能重复；程序通过小批量追加、较长读取超时和持久进度记录降低这个风险。
+Notion API 没有通用写入幂等键。本程序会在远端资源创建成功后立即记录 `remote_id` / `remote_url`，并在每批追加成功后记录 `remote_progress`。如果网络在服务端已经写入但客户端还没收到响应时中断，极端情况下某个追加批次仍可能重复；程序通过小批量追加、较长读取超时和持久进度记录降低这个风险。旧队列文件中的 `page_id`、`page_url` 和 `appended_block_count` 会自动兼容读取。
 
 ## 安全说明
 
-- 不要把真实 `notion_token` 提交到仓库。
+- 不要把真实 `notion_token`、`github_token`、`yuque_token`、`feishu_app_secret` 或 webhook bearer token 提交到仓库。
 - 推荐使用环境变量保存 token。
 - `build/`、运行配置和本地状态目录不应提交。
 

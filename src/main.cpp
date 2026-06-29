@@ -4,13 +4,13 @@
 #include "app_icon.h"
 #include "autostart.h"
 #include "config.h"
+#include "config_page.h"
 #include "converter.h"
 #include "hotkey.h"
-#include "http_client.h"
-#include "json.h"
 #include "logger.h"
 #include "queue.h"
 #include "resource.h"
+#include "upload_target.h"
 #include "util.h"
 #include "win_util.h"
 
@@ -22,6 +22,7 @@
 #include <filesystem>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <sstream>
@@ -35,21 +36,15 @@ namespace fs = std::filesystem;
 
 namespace
 {
-using ncw::JsonValue;
-using ncw::ParseJson;
 using ncw::CreateGeneratedAppIcon;
-using ncw::HttpResponse;
 using ncw::LastErrorMessage;
 using ncw::AppConfig;
 using ncw::AtomicWriteFile;
 using ncw::BuildTextBlocks;
-using ncw::BuildTextRichText;
 using ncw::BuildTitleFromContent;
-using ncw::CanonicalizeNotionId;
 using ncw::CliOptions;
-using ncw::CollapseWhitespace;
+using ncw::CreateUploadTarget;
 using ncw::CurrentHotkeyModifiers;
-using ncw::EscapeJson;
 using ncw::ExtractCfHtmlFragment;
 using ncw::Fnv1a64;
 using ncw::HasEmptyMarkdownCodeFenceArtifact;
@@ -57,7 +52,6 @@ using ncw::Hex64;
 using ncw::HtmlFragmentToMarkdown;
 using ncw::HotkeySpec;
 using ncw::HotkeySpecFromRecordedKey;
-using ncw::IsoUtcTimestampFromUnixMs;
 using ncw::IsAutoStartEnabled;
 using ncw::IsModifierVirtualKey;
 using ncw::Logger;
@@ -70,19 +64,19 @@ using ncw::PrintHelp;
 using ncw::PersistentQueue;
 using ncw::ReadWholeFile;
 using ncw::RunDryRunText;
+using ncw::RunConfigPageSelfTest;
 using ncw::RunSelfTest;
-using ncw::SelectAppendBatchEnd;
+using ncw::RunUploadTargetSelfTest;
 using ncw::SetAutoStartEnabled;
-using ncw::SummarizeForLog;
 using ncw::Trim;
-using ncw::TruncateUtf8;
 using ncw::UpsertConfigValue;
 using ncw::UploadFailure;
 using ncw::UploadJob;
+using ncw::UploadTarget;
 using ncw::Utf8ToWide;
 using ncw::ValidateConfigOrThrow;
 using ncw::WideToUtf8;
-using ncw::WinHttpClient;
+using ncw::WriteConfigPage;
 
 constexpr UINT_PTR kClipboardDebounceTimer = 1001;
 constexpr UINT kUploadHotkeyId = 2001;
@@ -99,6 +93,7 @@ constexpr UINT kMenuOpenConfig = 3008;
 constexpr UINT kMenuOpenLog = 3009;
 constexpr UINT kMenuOpenStateDir = 3010;
 constexpr UINT kMenuExit = 3011;
+constexpr UINT kMenuOpenConfigPage = 3012;
 constexpr const wchar_t *kAppDisplayName = L"Notion Clipboard Win";
 
 #ifndef NIF_SHOWTIP
@@ -118,11 +113,12 @@ HICON LoadApplicationIcon(HINSTANCE instance, int width, int height)
 
 std::atomic<std::uint64_t> g_job_counter{0};
 
-UploadJob MakeUploadJob(const std::string &content)
+UploadJob MakeUploadJob(const std::string &content, const std::string &target)
 {
     UploadJob job;
     job.created_at_ms = NowUnixMs();
     job.not_before_ms = 0;
+    job.target = target;
     job.hash = Hex64(Fnv1a64(content));
     job.title = BuildTitleFromContent(content);
     job.content = content;
@@ -134,285 +130,11 @@ UploadJob MakeUploadJob(const std::string &content)
     return job;
 }
 
-class NotionClient
-{
-public:
-    NotionClient(AppConfig config, Logger *logger) : config_(std::move(config)), logger_(logger)
-    {
-        http_.SetToken(config_.notion_token);
-    }
-
-    void Validate()
-    {
-        EnsureMetadata();
-    }
-
-    void ProcessJob(UploadJob *job, const std::function<void()> &checkpoint)
-    {
-        EnsureMetadata();
-
-        const std::vector<std::string> blocks = BuildTextBlocks(job->content);
-        if (job->page_id.empty())
-        {
-            const auto created = CreatePage(*job);
-            job->page_id = created.first;
-            job->page_url = created.second;
-            checkpoint();
-            if (logger_ != nullptr)
-            {
-                logger_->Info("已创建 Notion 页面: " + job->id);
-            }
-        }
-
-        if (job->appended_block_count > blocks.size())
-        {
-            job->appended_block_count = 0;
-        }
-
-        for (std::size_t begin = job->appended_block_count; begin < blocks.size();)
-        {
-            constexpr std::size_t kMaxAppendRequestBytes = 400ull * 1024ull;
-            const std::size_t end =
-                SelectAppendBatchEnd(blocks, begin, static_cast<std::size_t>(config_.append_batch_size),
-                                     kMaxAppendRequestBytes);
-            AppendBlocks(job->page_id, blocks, begin, end);
-            job->appended_block_count = end;
-            checkpoint();
-            begin = end;
-        }
-    }
-
-private:
-    void EnsureMetadata()
-    {
-        if (!resolved_data_source_id_.empty() && !resolved_title_property_name_.empty())
-        {
-            return;
-        }
-
-        resolved_data_source_id_ = ResolveDataSourceId();
-        ResolvePropertyMetadata(resolved_data_source_id_);
-        if (logger_ != nullptr)
-        {
-            logger_->Info("Notion 目标已就绪: data_source_id=" + resolved_data_source_id_ +
-                          ", title_property=" + resolved_title_property_name_ +
-                          (resolved_created_time_date_property_name_.empty()
-                               ? ""
-                               : ", created_time_property=" + resolved_created_time_date_property_name_));
-        }
-    }
-
-    std::string ResolveDataSourceId()
-    {
-        if (!config_.data_source_id.empty())
-        {
-            return CanonicalizeNotionId(config_.data_source_id);
-        }
-        if (config_.database_id.empty())
-        {
-            throw UploadFailure("缺少 data_source_id 或 database_id", false, 0);
-        }
-
-        const HttpResponse response = RequestWithRetry("GET", "/v1/databases/" + config_.database_id, "");
-        const JsonValue json = ParseJson(response.body);
-        const JsonValue *data_sources = json.find("data_sources");
-        if (data_sources == nullptr || !data_sources->is_array() || data_sources->as_array().empty())
-        {
-            throw UploadFailure("数据库响应中没有 data_sources", false, 0);
-        }
-        const JsonValue *id = data_sources->as_array().front().find("id");
-        if (id == nullptr || !id->is_string())
-        {
-            throw UploadFailure("数据库第一个 data_source 缺少 id", false, 0);
-        }
-        return CanonicalizeNotionId(id->as_string());
-    }
-
-    void ResolvePropertyMetadata(const std::string &data_source_id)
-    {
-        const HttpResponse response = RequestWithRetry("GET", "/v1/data_sources/" + data_source_id, "");
-        const JsonValue json = ParseJson(response.body);
-        const JsonValue *properties = json.find("properties");
-        if (properties == nullptr || !properties->is_object())
-        {
-            throw UploadFailure("data_source 响应中没有 properties", false, 0);
-        }
-
-        bool configured_created_time_seen = false;
-        std::string configured_created_time_type;
-        for (const auto &item : properties->as_object())
-        {
-            const JsonValue *type = item.second.find("type");
-            const std::string type_name = (type != nullptr && type->is_string()) ? type->as_string() : "";
-
-            if (resolved_title_property_name_.empty() && !config_.title_property_name.empty() &&
-                item.first == config_.title_property_name)
-            {
-                if (type_name != "title")
-                {
-                    throw UploadFailure("配置的 title_property_name 不是 title 类型: " + config_.title_property_name,
-                                        false, 0);
-                }
-                resolved_title_property_name_ = item.first;
-            }
-            else if (resolved_title_property_name_.empty() && config_.title_property_name.empty() &&
-                     type_name == "title")
-            {
-                resolved_title_property_name_ = item.first;
-            }
-
-            if (!config_.created_time_property_name.empty() && item.first == config_.created_time_property_name)
-            {
-                configured_created_time_seen = true;
-                configured_created_time_type = type_name;
-                if (type_name == "date")
-                {
-                    resolved_created_time_date_property_name_ = item.first;
-                }
-            }
-        }
-
-        if (resolved_title_property_name_.empty())
-        {
-            throw UploadFailure("data_source 中没有 title 类型属性", false, 0);
-        }
-
-        if (configured_created_time_seen && configured_created_time_type == "created_time" && logger_ != nullptr)
-        {
-            logger_->Info("创建时间属性是 Notion 内置 created_time 类型，将由 Notion 自动填写");
-        }
-        else if (!config_.created_time_property_name.empty() && configured_created_time_seen &&
-                 configured_created_time_type != "date" && logger_ != nullptr)
-        {
-            logger_->Warn("创建时间属性不是 date 类型，已跳过自动填写: " + config_.created_time_property_name +
-                          ", type=" + configured_created_time_type);
-        }
-    }
-
-    std::pair<std::string, std::string> CreatePage(const UploadJob &job)
-    {
-        std::ostringstream body;
-        body << "{\"parent\":{\"type\":\"data_source_id\",\"data_source_id\":\"" << EscapeJson(resolved_data_source_id_)
-             << "\"},\"properties\":{\"" << EscapeJson(resolved_title_property_name_)
-             << "\":{\"type\":\"title\",\"title\":[" << BuildTextRichText(job.title) << "]}";
-
-        if (!config_.content_property_name.empty())
-        {
-            const std::string content_preview = TruncateUtf8(CollapseWhitespace(job.content),
-                                                             static_cast<std::size_t>(config_.content_property_max_chars));
-            body << ",\"" << EscapeJson(config_.content_property_name) << "\":{\"type\":\"rich_text\",\"rich_text\":["
-                 << BuildTextRichText(content_preview) << "]}";
-        }
-        if (!resolved_created_time_date_property_name_.empty())
-        {
-            body << ",\"" << EscapeJson(resolved_created_time_date_property_name_)
-                 << "\":{\"type\":\"date\",\"date\":{\"start\":\"" << IsoUtcTimestampFromUnixMs(job.created_at_ms)
-                 << "\"}}";
-        }
-
-        body << "}}";
-
-        const HttpResponse response = RequestWithRetry("POST", "/v1/pages", body.str());
-        const JsonValue json = ParseJson(response.body);
-        const JsonValue *id = json.find("id");
-        if (id == nullptr || !id->is_string())
-        {
-            throw UploadFailure("创建页面响应缺少 id", true, 0);
-        }
-        const JsonValue *url = json.find("url");
-        return {CanonicalizeNotionId(id->as_string()), (url != nullptr && url->is_string()) ? url->as_string() : ""};
-    }
-
-    void AppendBlocks(const std::string &page_id, const std::vector<std::string> &blocks, std::size_t begin,
-                      std::size_t end)
-    {
-        std::ostringstream body;
-        body << "{\"children\":[";
-        for (std::size_t i = begin; i < end; ++i)
-        {
-            if (i != begin)
-            {
-                body << ",";
-            }
-            body << blocks[i];
-        }
-        body << "]}";
-        RequestWithRetry("PATCH", "/v1/blocks/" + page_id + "/children", body.str());
-    }
-
-    HttpResponse RequestWithRetry(const std::string &method, const std::string &path, const std::string &body)
-    {
-        std::string last_error;
-        int retry_after = 0;
-        for (int attempt = 0; attempt <= config_.http_retry_attempts; ++attempt)
-        {
-            try
-            {
-                Throttle();
-                const HttpResponse response = http_.Request(Utf8ToWide(method), Utf8ToWide(path), body);
-                retry_after = response.retry_after_seconds;
-                if (response.status_code >= 200 && response.status_code < 300)
-                {
-                    return response;
-                }
-
-                const bool retryable = response.status_code == 408 || response.status_code == 429 ||
-                                       (response.status_code >= 500 && response.status_code <= 599);
-                last_error = "HTTP " + std::to_string(response.status_code) + ": " + SummarizeForLog(response.body);
-                if (!retryable)
-                {
-                    throw UploadFailure(last_error, false, retry_after);
-                }
-            }
-            catch (const UploadFailure &)
-            {
-                throw;
-            }
-            catch (const std::exception &ex)
-            {
-                last_error = ex.what();
-            }
-
-            if (attempt < config_.http_retry_attempts)
-            {
-                const int delay_ms = retry_after > 0 ? retry_after * 1000 : std::min(30000, 500 * (1 << attempt));
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            }
-        }
-        throw UploadFailure(last_error.empty() ? "Notion 请求失败" : last_error, true, retry_after);
-    }
-
-    void Throttle()
-    {
-        if (config_.min_request_interval_ms <= 0)
-        {
-            return;
-        }
-        std::lock_guard<std::mutex> lock(throttle_mutex_);
-        const auto now = std::chrono::steady_clock::now();
-        const auto next_allowed = last_request_at_ + std::chrono::milliseconds(config_.min_request_interval_ms);
-        if (next_allowed > now)
-        {
-            std::this_thread::sleep_until(next_allowed);
-        }
-        last_request_at_ = std::chrono::steady_clock::now();
-    }
-
-    AppConfig config_;
-    Logger *logger_ = nullptr;
-    WinHttpClient http_;
-    std::string resolved_data_source_id_;
-    std::string resolved_title_property_name_;
-    std::string resolved_created_time_date_property_name_;
-    std::mutex throttle_mutex_;
-    std::chrono::steady_clock::time_point last_request_at_;
-};
-
 class UploadWorker
 {
 public:
-    UploadWorker(PersistentQueue *queue, NotionClient *notion, Logger *logger)
-        : queue_(queue), notion_(notion), logger_(logger)
+    UploadWorker(PersistentQueue *queue, UploadTarget *target, Logger *logger)
+        : queue_(queue), target_(target), logger_(logger)
     {
     }
 
@@ -460,12 +182,12 @@ private:
             const fs::path path = item->second;
             try
             {
-                notion_->ProcessJob(&job, [&]
+                target_->ProcessJob(&job, [&]
                                     { queue_->Update(path, job); });
                 queue_->MarkSuccess(path);
                 if (logger_ != nullptr)
                 {
-                    logger_->Info("上传成功: " + job.id + (job.page_url.empty() ? "" : " -> " + job.page_url));
+                    logger_->Info("上传成功: " + job.id + (job.remote_url.empty() ? "" : " -> " + job.remote_url));
                 }
             }
             catch (const UploadFailure &ex)
@@ -501,7 +223,7 @@ private:
     }
 
     PersistentQueue *queue_ = nullptr;
-    NotionClient *notion_ = nullptr;
+    UploadTarget *target_ = nullptr;
     Logger *logger_ = nullptr;
     std::atomic<bool> stop_{false};
     std::thread thread_;
@@ -1004,7 +726,8 @@ private:
         AppendMenuW(menu, MF_STRING | (clipboard_listener_enabled_ ? MF_CHECKED : MF_UNCHECKED),
                     kMenuToggleClipboardListener, L"自动监听剪贴板");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-        AppendMenuW(menu, MF_STRING, kMenuOpenConfig, L"打开配置");
+        AppendMenuW(menu, MF_STRING, kMenuOpenConfigPage, L"打开配置页面");
+        AppendMenuW(menu, MF_STRING, kMenuOpenConfig, L"打开配置文件");
         AppendMenuW(menu, MF_STRING, kMenuOpenLog, L"查看日志");
         AppendMenuW(menu, MF_STRING, kMenuOpenStateDir, L"打开状态目录");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -1041,6 +764,9 @@ private:
             break;
         case kMenuOpenConfig:
             OpenConfig();
+            break;
+        case kMenuOpenConfigPage:
+            OpenConfigPage();
             break;
         case kMenuOpenLog:
             OpenPath(config_->state_dir / L"notion-clipboard-win.log");
@@ -1284,7 +1010,32 @@ private:
                 {
                     fs::create_directories(parent);
                 }
-                AtomicWriteFile(config_path_, "notion_token=\n"
+                AtomicWriteFile(config_path_, "upload_target=notion\n"
+                                             "markdown_output_dir=\n"
+                                             "webhook_url=\n"
+                                             "webhook_bearer_token=\n"
+                                             "github_token=\n"
+                                             "github_gist_public=false\n"
+                                             "github_gist_filename_prefix=clipboard\n"
+                                             "github_repo_owner=\n"
+                                             "github_repo_name=\n"
+                                             "github_repo_branch=\n"
+                                             "github_repo_directory=clipboard\n"
+                                             "github_repo_filename_prefix=clipboard\n"
+                                             "yuque_token=\n"
+                                             "yuque_namespace=\n"
+                                             "yuque_slug_prefix=clipboard\n"
+                                             "feishu_app_id=\n"
+                                             "feishu_app_secret=\n"
+                                             "feishu_folder_token=\n"
+                                             "obsidian_vault_dir=\n"
+                                             "obsidian_folder=Clipboard\n"
+                                             "obsidian_filename_prefix=clipboard\n"
+                                             "local_git_repo_dir=\n"
+                                             "local_git_directory=clipboard\n"
+                                             "local_git_filename_prefix=clipboard\n"
+                                             "local_git_auto_commit=false\n"
+                                             "notion_token=\n"
                                              "data_source_id=\n"
                                              "database_id=\n"
                                              "hotkey=Ctrl+Shift+B\n"
@@ -1302,6 +1053,22 @@ private:
             }
         }
         OpenPath(config_path_);
+    }
+
+    void OpenConfigPage()
+    {
+        try
+        {
+            OpenPath(WriteConfigPage(*config_, config_path_));
+        }
+        catch (const std::exception &ex)
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Warn("创建配置页面失败: " + std::string(ex.what()));
+            }
+            ShowNotification(L"Notion Clipboard Win", L"创建配置页面失败，请查看日志。");
+        }
     }
 
     void OpenPath(const fs::path &path)
@@ -1330,7 +1097,7 @@ private:
             return;
         }
 
-        UploadJob job = MakeUploadJob(*text);
+        UploadJob job = MakeUploadJob(*text, config_->upload_target);
         const std::uint64_t now_ms = NowUnixMs();
         if (config_->duplicate_suppression_ms > 0 && job.hash == last_hash_ &&
             now_ms - last_hash_at_ms_ <= static_cast<std::uint64_t>(config_->duplicate_suppression_ms))
@@ -1452,7 +1219,7 @@ BOOL WINAPI ConsoleCtrlHandler(DWORD control_type)
     }
 }
 
-int RunOnce(const AppConfig &config, PersistentQueue *queue, NotionClient *notion, Logger *logger, bool dry_run)
+int RunOnce(const AppConfig &config, PersistentQueue *queue, UploadTarget *target, Logger *logger, bool dry_run)
 {
     ClipboardReader reader;
     const auto text = reader.ReadText(logger, config.max_clipboard_bytes);
@@ -1461,7 +1228,7 @@ int RunOnce(const AppConfig &config, PersistentQueue *queue, NotionClient *notio
         throw std::runtime_error("当前剪贴板没有可上传的文本");
     }
 
-    UploadJob job = MakeUploadJob(*text);
+    UploadJob job = MakeUploadJob(*text, config.upload_target);
     if (dry_run)
     {
         const std::vector<std::string> blocks = BuildTextBlocks(job.content);
@@ -1478,8 +1245,8 @@ int RunOnce(const AppConfig &config, PersistentQueue *queue, NotionClient *notio
 
     try
     {
-        notion->ProcessJob(&job, [] {});
-        logger->Info("上传成功: " + job.id + (job.page_url.empty() ? "" : " -> " + job.page_url));
+        target->ProcessJob(&job, [] {});
+        logger->Info("上传成功: " + job.id + (job.remote_url.empty() ? "" : " -> " + job.remote_url));
         return 0;
     }
     catch (const UploadFailure &ex)
@@ -1510,7 +1277,17 @@ int AppMain(int argc, wchar_t **argv)
     }
     if (cli.self_test)
     {
-        return RunSelfTest();
+        const int converter_result = RunSelfTest();
+        if (converter_result != 0)
+        {
+            return converter_result;
+        }
+        const int target_result = RunUploadTargetSelfTest();
+        if (target_result != 0)
+        {
+            return target_result;
+        }
+        return RunConfigPageSelfTest();
     }
     if (!cli.dry_run_file_path.empty())
     {
@@ -1530,21 +1307,21 @@ int AppMain(int argc, wchar_t **argv)
     logger.Info("程序启动，config=" + WideToUtf8(cli.config_path.wstring()));
 
     PersistentQueue queue(config.state_dir, config.max_retry_attempts);
-    NotionClient notion(config, &logger);
+    std::unique_ptr<UploadTarget> upload_target = CreateUploadTarget(config, &logger);
 
     if (cli.validate_config)
     {
-        notion.Validate();
+        upload_target->Validate();
         logger.Info("配置验证通过");
         return 0;
     }
 
     if (cli.once)
     {
-        return RunOnce(config, &queue, &notion, &logger, cli.dry_run);
+        return RunOnce(config, &queue, upload_target.get(), &logger, cli.dry_run);
     }
 
-    UploadWorker worker(&queue, &notion, &logger);
+    UploadWorker worker(&queue, upload_target.get(), &logger);
     worker.Start();
     int code = 0;
     try

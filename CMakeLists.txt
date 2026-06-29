@@ -22,12 +22,14 @@ add_executable(notion_clipboard_win
     src/app_icon.cpp
     src/autostart.cpp
     src/config.cpp
+    src/config_page.cpp
     src/converter.cpp
     src/hotkey.cpp
     src/http_client.cpp
     src/json.cpp
     src/logger.cpp
     src/queue.cpp
+    src/upload_target.cpp
     src/util.cpp
     src/win_util.cpp
     "${CMAKE_CURRENT_BINARY_DIR}/app.rc"

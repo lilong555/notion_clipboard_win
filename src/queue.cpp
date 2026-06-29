@@ -38,12 +38,13 @@ std::string JobToJson(const UploadJob &job)
         << "  \"created_at_ms\":" << job.created_at_ms << ",\n"
         << "  \"not_before_ms\":" << job.not_before_ms << ",\n"
         << "  \"attempts\":" << job.attempts << ",\n"
+        << "  \"target\":\"" << EscapeJson(job.target) << "\",\n"
         << "  \"hash\":\"" << EscapeJson(job.hash) << "\",\n"
         << "  \"title\":\"" << EscapeJson(job.title) << "\",\n"
         << "  \"content\":\"" << EscapeJson(job.content) << "\",\n"
-        << "  \"page_id\":\"" << EscapeJson(job.page_id) << "\",\n"
-        << "  \"page_url\":\"" << EscapeJson(job.page_url) << "\",\n"
-        << "  \"appended_block_count\":" << static_cast<unsigned long long>(job.appended_block_count) << ",\n"
+        << "  \"remote_id\":\"" << EscapeJson(job.remote_id) << "\",\n"
+        << "  \"remote_url\":\"" << EscapeJson(job.remote_url) << "\",\n"
+        << "  \"remote_progress\":" << static_cast<unsigned long long>(job.remote_progress) << ",\n"
         << "  \"last_error\":\"" << EscapeJson(job.last_error) << "\"\n"
         << "}\n";
     return oss.str();
@@ -97,12 +98,22 @@ UploadJob JobFromJson(const std::string &text)
     job.created_at_ms = JsonNumberAsU64(json.find("created_at_ms"), 0);
     job.not_before_ms = JsonNumberAsU64(json.find("not_before_ms"), 0);
     job.attempts = JsonNumberAsInt(json.find("attempts"), 0);
+    job.target = JsonStringOrEmpty(json.find("target"));
     job.hash = JsonStringOrEmpty(json.find("hash"));
     job.title = JsonStringOrEmpty(json.find("title"));
     job.content = JsonStringOrEmpty(json.find("content"));
-    job.page_id = JsonStringOrEmpty(json.find("page_id"));
-    job.page_url = JsonStringOrEmpty(json.find("page_url"));
-    job.appended_block_count = JsonNumberAsSize(json.find("appended_block_count"), 0);
+    job.remote_id = JsonStringOrEmpty(json.find("remote_id"));
+    if (job.remote_id.empty())
+    {
+        job.remote_id = JsonStringOrEmpty(json.find("page_id"));
+    }
+    job.remote_url = JsonStringOrEmpty(json.find("remote_url"));
+    if (job.remote_url.empty())
+    {
+        job.remote_url = JsonStringOrEmpty(json.find("page_url"));
+    }
+    job.remote_progress = JsonNumberAsSize(json.find("remote_progress"),
+                                          JsonNumberAsSize(json.find("appended_block_count"), 0));
     job.last_error = JsonStringOrEmpty(json.find("last_error"));
     if (job.id.empty() || job.content.empty())
     {

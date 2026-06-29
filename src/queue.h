@@ -33,12 +33,13 @@ struct UploadJob
     std::uint64_t created_at_ms = 0;
     std::uint64_t not_before_ms = 0;
     int attempts = 0;
+    std::string target;
     std::string hash;
     std::string title;
     std::string content;
-    std::string page_id;
-    std::string page_url;
-    std::size_t appended_block_count = 0;
+    std::string remote_id;
+    std::string remote_url;
+    std::size_t remote_progress = 0;
     std::string last_error;
 };
 

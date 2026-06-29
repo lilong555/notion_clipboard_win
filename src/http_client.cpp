@@ -4,18 +4,10 @@
 
 #include <algorithm>
 #include <stdexcept>
-#include <utility>
 #include <vector>
 
 namespace ncw
 {
-namespace
-{
-constexpr const char *kNotionVersion = "2026-03-11";
-constexpr const wchar_t *kNotionHost = L"api.notion.com";
-constexpr int kNotionPort = INTERNET_DEFAULT_HTTPS_PORT;
-}
-
 ScopedInternetHandle::ScopedInternetHandle(HINTERNET handle) : handle_(handle) {}
 
 ScopedInternetHandle::~ScopedInternetHandle()
@@ -50,17 +42,62 @@ WinHttpClient::WinHttpClient()
     }
 }
 
-HttpResponse WinHttpClient::Request(const std::wstring &method, const std::wstring &path, const std::string &body) const
+HttpResponse WinHttpClient::RequestJsonUrl(const std::wstring &method, const std::string &url,
+                                           const std::wstring &extra_headers, const std::string &body,
+                                           const std::string &connection_name) const
 {
-    ScopedInternetHandle connect(WinHttpConnect(session_.get(), kNotionHost, kNotionPort, 0));
+    const std::wstring wide_url = Utf8ToWide(url);
+    URL_COMPONENTS components = {};
+    components.dwStructSize = sizeof(components);
+    components.dwSchemeLength = static_cast<DWORD>(-1);
+    components.dwHostNameLength = static_cast<DWORD>(-1);
+    components.dwUrlPathLength = static_cast<DWORD>(-1);
+    components.dwExtraInfoLength = static_cast<DWORD>(-1);
+    if (!WinHttpCrackUrl(wide_url.c_str(), static_cast<DWORD>(wide_url.size()), 0, &components))
+    {
+        throw std::runtime_error("解析 URL 失败: " + LastErrorMessage());
+    }
+    if (components.nScheme != INTERNET_SCHEME_HTTP && components.nScheme != INTERNET_SCHEME_HTTPS)
+    {
+        throw std::runtime_error("URL 只支持 http 或 https");
+    }
+    const std::wstring host(components.lpszHostName, components.dwHostNameLength);
+    if (host.empty())
+    {
+        throw std::runtime_error("URL 缺少 host");
+    }
+    std::wstring path;
+    if (components.dwUrlPathLength > 0)
+    {
+        path.assign(components.lpszUrlPath, components.dwUrlPathLength);
+    }
+    if (components.dwExtraInfoLength > 0)
+    {
+        path.append(components.lpszExtraInfo, components.dwExtraInfoLength);
+    }
+    if (path.empty())
+    {
+        path = L"/";
+    }
+    return SendJsonRequest(method, host, components.nPort, path, components.nScheme == INTERNET_SCHEME_HTTPS,
+                           extra_headers, body, connection_name);
+}
+
+HttpResponse WinHttpClient::SendJsonRequest(const std::wstring &method, const std::wstring &host, INTERNET_PORT port,
+                                            const std::wstring &path, bool secure,
+                                            const std::wstring &extra_headers, const std::string &body,
+                                            const std::string &connection_name) const
+{
+    ScopedInternetHandle connect(WinHttpConnect(session_.get(), host.c_str(), port, 0));
     if (connect.get() == nullptr)
     {
-        throw std::runtime_error("连接 Notion 失败: " + LastErrorMessage());
+        throw std::runtime_error("连接 " + connection_name + " 失败: " + LastErrorMessage());
     }
 
     const wchar_t *accept_types[] = {L"application/json", nullptr};
     ScopedInternetHandle request(WinHttpOpenRequest(connect.get(), method.c_str(), path.c_str(), nullptr,
-                                                    WINHTTP_NO_REFERER, accept_types, WINHTTP_FLAG_SECURE));
+                                                    WINHTTP_NO_REFERER, accept_types,
+                                                    secure ? WINHTTP_FLAG_SECURE : 0));
     if (request.get() == nullptr)
     {
         throw std::runtime_error("创建 HTTP 请求失败: " + LastErrorMessage());
@@ -68,11 +105,12 @@ HttpResponse WinHttpClient::Request(const std::wstring &method, const std::wstri
 
     WinHttpSetTimeouts(request.get(), 10000, 15000, 30000, 90000);
 
-    std::wstring headers = L"Authorization: Bearer ";
-    headers += Utf8ToWide(notion_token_);
-    headers += L"\r\nNotion-Version: ";
-    headers += Utf8ToWide(kNotionVersion);
-    headers += L"\r\nContent-Type: application/json\r\n";
+    std::wstring headers = L"Content-Type: application/json\r\n";
+    headers += extra_headers;
+    if (!headers.empty() && headers.substr(headers.size() - 2) != L"\r\n")
+    {
+        headers += L"\r\n";
+    }
 
     LPVOID request_body = body.empty() ? WINHTTP_NO_REQUEST_DATA : const_cast<char *>(body.data());
     const DWORD body_size = static_cast<DWORD>(body.size());
@@ -116,11 +154,6 @@ HttpResponse WinHttpClient::Request(const std::wstring &method, const std::wstri
     }
 
     return {static_cast<long>(status_code), response_body, ReadRetryAfterSeconds(request.get())};
-}
-
-void WinHttpClient::SetToken(std::string token)
-{
-    notion_token_ = std::move(token);
 }
 
 int WinHttpClient::ReadRetryAfterSeconds(HINTERNET request)
