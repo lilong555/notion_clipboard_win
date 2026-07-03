@@ -1,5 +1,7 @@
 #define AppName "Notion Clipboard Win"
-#define AppVersion Trim(FileRead("..\VERSION"))
+#ifndef AppVersion
+  #define AppVersion "0.0.0"
+#endif
 #define AppPublisher "lilong"
 #define AppURL "https://github.com/lilong555/notion_clipboard_win"
 
@@ -27,7 +29,6 @@ CloseApplications=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
 
 [Files]
 Source: "..\build\Release\notion_clipboard_win.exe"; DestDir: "{app}"; Flags: ignoreversion

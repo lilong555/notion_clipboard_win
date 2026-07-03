@@ -30,6 +30,7 @@ $IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
 $IsccPath = if ($IsccCommand) { $IsccCommand.Source } else { $null }
 if (-not $IsccPath) {
     $InnoCandidates = @(
+        "$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe",
         "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
         "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
     )
@@ -64,7 +65,7 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path ".\dist" | Out-Null
-    & $IsccPath ".\installer\notion-clipboard-win.iss"
+    & $IsccPath "/DAppVersion=$AppVersion" ".\installer\notion-clipboard-win.iss"
 
     $Installer = ".\dist\NotionClipboardWin-$AppVersion-Setup.exe"
     if (-not (Test-Path $Installer)) {
