@@ -25,6 +25,8 @@ The project currently focuses on two stable targets: **Notion** and **Obsidian**
 4. Start `Notion Clipboard Win` from the Start menu.
 5. The app appears in the Windows system tray.
 
+If you leave the post-install launch option enabled, the configuration page opens automatically once. After that, the app does not open the configuration page automatically; open it manually from the tray menu.
+
 If you do not see the tray icon, click the small up arrow near the Windows clock. Windows may have hidden it there.
 
 ### 2. Open The Configuration Page
@@ -34,7 +36,7 @@ If you do not see the tray icon, click the small up arrow near the Windows clock
 3. A local page opens in your browser.
 4. After editing, click "Apply and restart".
 
-The configuration page is local to your computer. It is used to generate and save the local ini configuration.
+The configuration page is local to your computer. It is used to generate and save the local ini configuration. Except for the one post-install launch, the app does not open this page automatically.
 
 ### 3. Choose Upload Targets
 
@@ -126,6 +128,10 @@ If an upload fails, it stays in the local queue and can be retried later.
 ### Configuration Changes Did Not Apply
 
 Make sure you clicked "Apply and restart". Copying or downloading the config does not update the currently running tray process.
+
+### Configuration Page Did Not Open Automatically
+
+This is expected. Except for the one post-install launch, open the configuration page manually from the tray menu.
 
 ### Obsidian Folder Is Missing
 

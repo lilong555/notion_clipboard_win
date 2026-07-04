@@ -397,6 +397,10 @@ CliOptions ParseCli(int argc, wchar_t **argv)
         {
             options.self_test = true;
         }
+        else if (arg == L"--open-config-page-on-start")
+        {
+            options.open_config_page_on_start = true;
+        }
         else if (arg == L"--config")
         {
             if (i + 1 >= argc)
@@ -483,6 +487,7 @@ void PrintHelp()
               << "  notion_clipboard_win.exe --dry-run --once             读取剪贴板但不上传\n\n"
               << "  notion_clipboard_win.exe --self-test                  运行本地转换回归测试\n\n"
               << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不上传\n\n"
+              << "  notion_clipboard_win.exe --open-config-page-on-start  启动后打开配置页一次\n\n"
               << "默认热键:\n"
               << "  Ctrl+Shift+B\n\n"
               << "上传后端:\n"

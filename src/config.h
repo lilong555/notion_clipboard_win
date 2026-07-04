@@ -64,6 +64,7 @@ struct CliOptions
     bool dry_run = false;
     bool self_test = false;
     bool help = false;
+    bool open_config_page_on_start = false;
 };
 
 std::string CanonicalizeNotionId(std::string input);

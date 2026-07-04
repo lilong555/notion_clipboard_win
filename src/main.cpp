@@ -830,13 +830,14 @@ class TrayApplication
 {
 public:
     TrayApplication(const AppConfig *config, fs::path config_path, PersistentQueue *queue, UploadWorker *worker,
-                    Logger *logger, std::string startup_config_error)
+                    Logger *logger, std::string startup_config_error, bool open_config_page_on_start)
         : config_(config),
           config_path_(std::move(config_path)),
           queue_(queue),
           worker_(worker),
           logger_(logger),
           startup_config_error_(std::move(startup_config_error)),
+          open_config_page_on_start_(open_config_page_on_start),
           hotkey_spec_(DefaultHotkeySpec()),
           hotkey_enabled_(config->enable_hotkey),
           notifications_enabled_(config->tray_notifications),
@@ -920,7 +921,8 @@ public:
                           "，clipboard_listener=" + (clipboard_listener_registered_ ? "on" : "off"));
         }
         ShowNotification(L"Notion Clipboard Win", L"后台进程已启动，按 " + Utf8ToWide(hotkey_spec_.display) + L" 上传剪贴板。");
-        MaybeShowStartupConfigError();
+        const bool opened_config_page_on_start = MaybeOpenConfigPageOnStart();
+        MaybeShowStartupConfigError(opened_config_page_on_start);
 
         MSG msg;
         while (GetMessageW(&msg, nullptr, 0, 0) > 0)
@@ -1750,7 +1752,21 @@ private:
                                           });
     }
 
-    void MaybeShowStartupConfigError()
+    bool MaybeOpenConfigPageOnStart()
+    {
+        if (!open_config_page_on_start_)
+        {
+            return false;
+        }
+        if (logger_ != nullptr)
+        {
+            logger_->Info("按启动参数打开配置页面");
+        }
+        OpenConfigPage();
+        return true;
+    }
+
+    void MaybeShowStartupConfigError(bool config_page_already_opened)
     {
         if (startup_config_error_.empty())
         {
@@ -1760,10 +1776,13 @@ private:
         {
             logger_->Warn("配置尚未可用: " + startup_config_error_);
         }
-        ShowNotification(L"Notion Clipboard Win", L"配置尚未完成，已打开配置页面。");
-        OpenConfigPage();
+        ShowNotification(L"Notion Clipboard Win",
+                         config_page_already_opened ? L"配置尚未完成，已打开配置页面。"
+                                                    : L"配置尚未完成，请从托盘菜单打开配置页面。");
         MessageBoxW(hwnd_, (L"配置尚未完成，上传功能暂不可用。\n\n" + Utf8ToWide(startup_config_error_) +
-                                L"\n\n请在配置页面填写必要项后重启程序。")
+                                (config_page_already_opened
+                                     ? L"\n\n请在已打开的配置页面填写必要项，然后点击“应用并重启”。"
+                                     : L"\n\n请从托盘菜单打开配置页面，填写必要项后点击“应用并重启”。"))
                                .c_str(),
                     L"Notion Clipboard Win", MB_OK | MB_ICONINFORMATION | MB_TOPMOST);
     }
@@ -1792,8 +1811,7 @@ private:
             }
             if (user_initiated)
             {
-                ShowNotification(L"Notion Clipboard Win", L"配置尚未完成，已打开配置页面。");
-                OpenConfigPage();
+                ShowNotification(L"Notion Clipboard Win", L"配置尚未完成，请从托盘菜单打开配置页面。");
             }
             return;
         }
@@ -1914,6 +1932,7 @@ private:
     UploadWorker *worker_ = nullptr;
     Logger *logger_ = nullptr;
     std::string startup_config_error_;
+    bool open_config_page_on_start_ = false;
     ClipboardReader reader_;
     HotkeySpec hotkey_spec_;
     std::string last_hash_;
@@ -2389,6 +2408,17 @@ int RunMainSelfTest()
 
     try
     {
+        {
+            wchar_t exe[] = L"notion_clipboard_win.exe";
+            wchar_t flag[] = L"--open-config-page-on-start";
+            wchar_t *argv[] = {exe, flag};
+            const CliOptions parsed = ParseCli(2, argv);
+            if (!parsed.open_config_page_on_start)
+            {
+                fail("open-config-page-on-start flag was not parsed");
+            }
+        }
+
         PersistentQueue queue(root, 2);
         SuccessfulTarget target;
         UploadWorker worker(&queue, &target, nullptr);
@@ -2670,7 +2700,8 @@ int AppMain(int argc, wchar_t **argv)
     int code = 0;
     try
     {
-        TrayApplication app(&config, cli.config_path, &queue, &worker, &logger, startup_config_error);
+        TrayApplication app(&config, cli.config_path, &queue, &worker, &logger, startup_config_error,
+                            cli.open_config_page_on_start);
         code = app.Run();
     }
     catch (...)

@@ -43,4 +43,4 @@ Name: "{autoprograms}\{#AppName}"; Filename: "{app}\notion_clipboard_win.exe"
 Name: "{autoprograms}\{#AppName} README"; Filename: "{app}\README.md"
 
 [Run]
-Filename: "{app}\notion_clipboard_win.exe"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\notion_clipboard_win.exe"; Parameters: "--open-config-page-on-start"; Description: "Launch {#AppName}"; Flags: nowait postinstall skipifsilent
