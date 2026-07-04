@@ -175,6 +175,11 @@ std::wstring JoinTargetDisplayNames(const std::vector<std::string> &targets)
     return joined;
 }
 
+HotkeySpec DefaultHotkeySpec()
+{
+    return ParseHotkeyOrThrow("Ctrl+Shift+B");
+}
+
 std::string UploadJobLocation(const UploadJob &job)
 {
     if (job.target == "obsidian" && !job.remote_id.empty())
@@ -832,13 +837,34 @@ public:
           worker_(worker),
           logger_(logger),
           startup_config_error_(std::move(startup_config_error)),
-          hotkey_spec_(ParseHotkeyOrThrow(config->hotkey)),
+          hotkey_spec_(DefaultHotkeySpec()),
           hotkey_enabled_(config->enable_hotkey),
           notifications_enabled_(config->tray_notifications),
           auto_start_enabled_(config->start_with_windows),
           auto_start_configured_(config->start_with_windows_configured),
           clipboard_listener_enabled_(config->enable_clipboard_listener)
     {
+        try
+        {
+            hotkey_spec_ = ParseHotkeyOrThrow(config->hotkey);
+        }
+        catch (const std::exception &ex)
+        {
+            hotkey_enabled_ = false;
+            if (startup_config_error_.empty())
+            {
+                startup_config_error_ = ex.what();
+            }
+            else
+            {
+                startup_config_error_ += "\n";
+                startup_config_error_ += ex.what();
+            }
+            if (logger_ != nullptr)
+            {
+                logger_->Warn("热键配置无效，已临时禁用热键并使用默认显示值: " + std::string(ex.what()));
+            }
+        }
     }
 
     int Run()
@@ -2469,6 +2495,27 @@ int RunMainSelfTest()
             fail("validate-config protocol content was not loaded from temporary ini");
         }
         fs::remove(protocol_temp_path, ignored);
+
+        const std::string invalid_hotkey_content =
+            "upload_target=obsidian\nobsidian_vault_dir=" + WideToUtf8(protocol_vault.wstring()) +
+            "\nhotkey=Ctrl+DefinitelyNotAKey\n";
+        bool invalid_hotkey_rejected = false;
+        try
+        {
+            ValidateConfigContentForApply(protocol_config_path, invalid_hotkey_content);
+        }
+        catch (const std::exception &ex)
+        {
+            invalid_hotkey_rejected = std::string(ex.what()).find("hotkey") != std::string::npos;
+        }
+        if (!invalid_hotkey_rejected)
+        {
+            fail("apply-config validation did not reject invalid hotkey");
+        }
+
+        ValidateConfigContentForApply(protocol_config_path,
+                                      "upload_target=obsidian\nobsidian_vault_dir=" +
+                                          WideToUtf8(protocol_vault.wstring()) + "\nhotkey=Ctrl+Alt+N\n");
 
         AppConfig diagnostic_config;
         diagnostic_config.upload_target = "obsidian,notion";

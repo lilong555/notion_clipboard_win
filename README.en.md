@@ -99,11 +99,7 @@ The default upload hotkey is `Ctrl+Shift+B`. If it conflicts with another app, c
 5. Make sure "Enable global hotkey" is checked.
 6. Click "Apply and restart" to activate the new hotkey.
 
-You can also type the value manually:
-
-```ini
-hotkey=Ctrl+Alt+N
-```
+The hotkey field only displays the current hotkey. It is not manually editable, which avoids invalid key combinations.
 
 ### 8. Upload Content
 

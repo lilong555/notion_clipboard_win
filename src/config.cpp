@@ -1,5 +1,6 @@
 #include "config.h"
 
+#include "hotkey.h"
 #include "util.h"
 #include "win_util.h"
 
@@ -574,6 +575,15 @@ void ValidateSingleUploadTargetOrThrow(const AppConfig &config)
 
 void ValidateConfigOrThrow(const AppConfig &config)
 {
+    try
+    {
+        ParseHotkeyOrThrow(config.hotkey);
+    }
+    catch (const std::exception &ex)
+    {
+        throw std::runtime_error("hotkey 配置无效: " + std::string(ex.what()));
+    }
+
     const std::vector<std::string> targets = ParseUploadTargets(config.upload_target);
     if (targets.empty())
     {

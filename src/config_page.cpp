@@ -146,9 +146,9 @@ void AddCheckbox(std::ostringstream *html, const std::string &key, const std::st
 void AddHotkeyInput(std::ostringstream *html, const std::string &value)
 {
     *html << "<label><span>全局热键</span><div class=\"input-action\"><input data-key=\"hotkey\" id=\"hotkeyInput\" "
-          << "type=\"text\" value=\"" << HtmlEscape(value)
+          << "type=\"text\" readonly aria-readonly=\"true\" value=\"" << HtmlEscape(value)
           << "\"><button type=\"button\" id=\"recordHotkey\" class=\"secondary\">录制热键</button></div>"
-          << "<small id=\"hotkeyHelp\">点击录制后按组合键，例如 Ctrl+Shift+B；Esc 取消。</small></label>\n";
+          << "<small id=\"hotkeyHelp\">热键只能通过录制修改。点击录制后按组合键，例如 Ctrl+Shift+B；Esc 取消。</small></label>\n";
 }
 
 void AddSectionStart(std::ostringstream *html, const std::string &title, const std::string &desc)
@@ -422,7 +422,7 @@ h1{font-size:20px;margin:0}.path{color:var(--muted);font-size:12px;word-break:br
 section,.output{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}h2{font-size:15px;margin:0 0 4px}p{margin:0 0 12px;color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}label{display:grid;gap:5px}label span{font-weight:600}input,select,textarea{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:6px;padding:9px 10px;font:inherit}
 small{color:var(--muted)}.check{grid-template-columns:auto 1fr;align-items:start}.check input{width:auto;margin-top:3px}.check small{grid-column:2}.wide{grid-column:1/-1}.preview{border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:6px;padding:9px 10px;background:var(--bg);color:var(--muted);word-break:break-all}.preview strong{color:var(--text)}
-.input-action{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}.input-action button{white-space:nowrap}
+.input-action{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}.input-action button{white-space:nowrap}.input-action input[readonly]{cursor:pointer}
 .actions{display:flex;gap:8px;flex-wrap:wrap}button,.download{border:0;border-radius:6px;background:var(--accent);color:white;padding:9px 12px;font-weight:600;cursor:pointer;text-decoration:none}button:disabled{opacity:.5;cursor:not-allowed}.secondary{background:var(--accent2)}
 textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-size:12px}.target{display:flex;gap:10px;align-items:flex-start}.target-list{display:flex;gap:8px;flex-wrap:wrap;max-width:780px}.target-list label{display:flex;grid-template-columns:none;gap:5px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);font-size:12px}.target-list input{width:auto}.hint{border-left:3px solid var(--accent);padding-left:10px;color:var(--muted)}
 .status{margin:10px 0 12px;border:1px solid var(--line);border-left-width:3px;border-radius:6px;padding:9px 10px;color:var(--muted);background:var(--bg)}.status.ok{border-left-color:var(--ok);color:var(--ok)}.status.error{border-left-color:var(--danger);color:var(--danger)}
@@ -508,7 +508,8 @@ targetChecks.forEach(el=>el.checked=initialTargets.has(targetValue(el)));
 if(!targetChecks.some(el=>el.checked)&&targetChecks.length)targetChecks[0].checked=true;
 function val(key){const el=document.querySelector(`[data-key="${key}"]`); if(!el)return ""; return el.type==="checkbox"?(el.checked?"true":"false"):el.value.trim();}
 function selectedTargets(){return targetChecks.filter(el=>el.checked).map(targetValue);}
-function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个上传后端"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要 Data Source ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian Vault 不能为空"); return problems;}
+function isHotkeyTextValid(text){const tokens=(text||"").split("+").map(part=>part.trim()).filter(Boolean); if(tokens.length<2)return false; let modifiers=0; let keys=0; const keyNames=new Set(["backspace","delete","del","down","end","enter","esc","escape","home","insert","ins","left","pagedown","pageup","pgdn","pgup","pause","printscreen","prtsc","right","space","tab","up"]); for(const raw of tokens){const token=raw.toLowerCase(); if(token==="ctrl"||token==="control"||token==="alt"||token==="shift"||token==="win"||token==="windows"||token==="super"||token==="meta"){modifiers++; continue;} if(/^[a-z0-9]$/.test(token)||/^f([1-9]|1[0-9]|2[0-4])$/.test(token)||keyNames.has(token)){keys++; continue;} return false;} return modifiers>0&&keys===1;}
+function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个上传后端"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要 Data Source ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian Vault 不能为空"); return problems;}
 function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后将上传到："+selected.join("、")); applyButton.disabled=problems.length>0;}
 function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; document.getElementById("ini").value=text; document.getElementById("download").href=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); updateStatus(); updateObsidianPreview();}
 function protocolUrl(action){return "notion-clipboard-win:/"+action+"/?path="+encodeURIComponent(configPath);}
@@ -546,6 +547,7 @@ function stopHotkeyRecording(message){recordingHotkey=false; document.removeEven
 function handleRecordedHotkey(event){if(!recordingHotkey)return; event.preventDefault(); event.stopPropagation(); if(event.key==="Escape"){stopHotkeyRecording("已取消录制。点击录制后按组合键，例如 Ctrl+Shift+B。"); return;} const display=formatRecordedHotkey(event); if(!display){hotkeyHelp.textContent="请按 Ctrl、Alt、Shift 或 Win 加一个主按键。Esc 取消。"; return;} hotkeyInput.value=display; const enable=document.querySelector('[data-key="enable_hotkey"]'); if(enable)enable.checked=true; stopHotkeyRecording(`已录制：${display}`); build();}
 function startHotkeyRecording(){if(recordingHotkey)return; recordingHotkey=true; recordHotkeyButton.textContent="录制中..."; hotkeyHelp.textContent="请按新的组合键，例如 Ctrl+Alt+N；Esc 取消。"; hotkeyInput.focus(); hotkeyInput.select(); document.addEventListener("keydown",handleRecordedHotkey,true);}
 recordHotkeyButton.addEventListener("click",startHotkeyRecording);
+hotkeyInput.addEventListener("click",startHotkeyRecording);
 document.getElementById("reveal").addEventListener("click",()=>document.querySelectorAll('input[type="password"],input[data-was-password]').forEach(el=>{if(el.type==="password"){el.dataset.wasPassword="1";el.type="text"}else{el.type="password"}}));
 document.querySelectorAll("[data-choice-target]").forEach(syncChoice);
 syncTargets();
@@ -637,10 +639,13 @@ int RunConfigPageSelfTest()
                                        "protocolUrl(\"open-recent-uploads\")",
                                        "id=\"status\"", "validateConfig()", "applyButton.disabled",
                                        "配置完整。保存后将上传到：", "需要处理：",
-                                       "id=\"hotkeyInput\"", "id=\"recordHotkey\"", "录制热键",
+                                       "id=\"hotkeyInput\"", "readonly aria-readonly=\"true\"", "id=\"recordHotkey\"",
+                                       "录制热键", "热键只能通过录制修改",
                                        "recordedKeyLabel(event)", "formatRecordedHotkey(event)",
                                        "handleRecordedHotkey(event)", "startHotkeyRecording()",
+                                       "hotkeyInput.addEventListener(\"click\",startHotkeyRecording)",
                                        "请按新的组合键，例如 Ctrl+Alt+N；Esc 取消。",
+                                       "isHotkeyTextValid(text)", "全局热键格式无效，请重新录制",
                                        "notion-clipboard-win:/apply-config/", "应用并重启"})
             {
                 if (html.find(needle) == std::string::npos)
