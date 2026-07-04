@@ -152,7 +152,7 @@ Notion 的代码高亮依赖代码块语言。程序会尽量识别 `cpp`、`sql
 
 ## 手动配置示例
 
-如果你不使用配置页面，也可以编辑 `notion_clipboard_win.ini`。
+如果你不使用配置页面，也可以编辑 `notion_clipboard_win.ini`。普通用户仍建议优先使用配置页面，因为热键录制、Obsidian vault 选择和配置验证都在页面里更直观。
 
 只上传到 Notion：
 

@@ -152,7 +152,7 @@ The app supports common `$...$`, `$$...$$`, `\(...\)`, and `\[...\]` formulas. F
 
 ## Manual Configuration Examples
 
-If you do not use the configuration page, edit `notion_clipboard_win.ini`.
+If you do not use the configuration page, edit `notion_clipboard_win.ini`. For most users, the configuration page is still recommended because hotkey recording, Obsidian vault selection, and validation are clearer there.
 
 Notion only:
 
