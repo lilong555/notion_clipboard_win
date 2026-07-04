@@ -50,7 +50,7 @@ notion_clipboard_win/
   build-release.bat       Release 托盘版构建脚本
   VERSION                 发布版本号的单一来源
   config.example.ini      配置模板，不包含真实凭据
-  LICENSE                 个人免费、商用授权许可证
+  LICENSE                 MIT 开源许可证
   installer/              Inno Setup 安装包脚本
   scripts/                发布构建脚本
   src/                    C++17 Win32 源码
@@ -259,9 +259,7 @@ Notion API 没有通用写入幂等键。本程序会在远端资源创建成功
 
 ## 许可证
 
-本项目采用 source-available 授权模式，不是 MIT、Apache-2.0 等 OSI 开源许可证。个人、学习、研究、评估和其他非商业用途可以免费使用、复制、修改和分发；商业用途需要获得版权持有人的书面授权。
-
-商业授权请通过 GitHub 仓库联系版权持有人。完整条款见 [LICENSE](LICENSE)。
+本项目采用 MIT License。你可以自由使用、复制、修改、分发、再授权和销售本软件，前提是保留版权声明和许可声明。完整条款见 [LICENSE](LICENSE)。
 
 ## 安全
 

@@ -50,7 +50,7 @@ notion_clipboard_win/
   build-release.bat       Release tray build helper
   VERSION                 Single source of truth for release version
   config.example.ini      Safe config template
-  LICENSE                 Personal-free, commercial-license terms
+  LICENSE                 MIT open-source license
   installer/              Inno Setup installer script
   scripts/                Release build scripts
   src/                    C++17 Win32 source
@@ -259,9 +259,7 @@ Upload the installer and `.sha256` file to the GitHub Release. Before publishing
 
 ## License
 
-This project uses a source-available license. It is not licensed under MIT, Apache-2.0, or another OSI-approved open-source license. Personal, educational, research, evaluation, and other non-commercial use is free; commercial use requires written authorization from the copyright holder.
-
-For commercial authorization, contact the copyright holder through the GitHub repository. See [LICENSE](LICENSE) for the full terms.
+This project is licensed under the MIT License. You may use, copy, modify, distribute, sublicense, and sell copies of the software as long as the copyright and license notices are preserved. See [LICENSE](LICENSE) for the full terms.
 
 ## Security
 
