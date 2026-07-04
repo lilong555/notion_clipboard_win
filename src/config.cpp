@@ -8,6 +8,7 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -40,8 +41,43 @@ std::string CanonicalizeNotionId(std::string input)
            hex.substr(20);
 }
 
+std::vector<std::string> ParseUploadTargets(const std::string &value)
+{
+    std::vector<std::string> targets;
+    std::string token;
+    const std::string normalized = ToLowerAscii(value);
+    auto flush = [&]
+    {
+        token = Trim(token);
+        if (!token.empty() && std::find(targets.begin(), targets.end(), token) == targets.end())
+        {
+            targets.push_back(token);
+        }
+        token.clear();
+    };
+
+    for (unsigned char ch : normalized)
+    {
+        if (ch == ',' || ch == ';' || ch == '|' || std::isspace(ch))
+        {
+            flush();
+        }
+        else
+        {
+            token.push_back(static_cast<char>(ch));
+        }
+    }
+    flush();
+    return targets;
+}
+
 namespace
 {
+std::string SupportedUploadTargetsText()
+{
+    return "notion、obsidian（推荐稳定）；markdown_file、webhook、yuque、feishu_doc 为实验/未来兼容目标";
+}
+
 void ApplyConfigValue(AppConfig *config, const std::string &key, const std::string &value)
 {
     const std::string normalized = ToLowerAscii(Trim(key));
@@ -64,44 +100,6 @@ void ApplyConfigValue(AppConfig *config, const std::string &key, const std::stri
     else if (normalized == "webhook_bearer_token")
     {
         config->webhook_bearer_token = trimmed_value;
-    }
-    else if (normalized == "github_token")
-    {
-        config->github_token = trimmed_value;
-    }
-    else if (normalized == "github_gist_public")
-    {
-        config->github_gist_public = ParseBool(trimmed_value);
-    }
-    else if (normalized == "github_gist_filename_prefix")
-    {
-        if (!trimmed_value.empty())
-        {
-            config->github_gist_filename_prefix = trimmed_value;
-        }
-    }
-    else if (normalized == "github_repo_owner")
-    {
-        config->github_repo_owner = trimmed_value;
-    }
-    else if (normalized == "github_repo_name")
-    {
-        config->github_repo_name = trimmed_value;
-    }
-    else if (normalized == "github_repo_branch")
-    {
-        config->github_repo_branch = trimmed_value;
-    }
-    else if (normalized == "github_repo_directory")
-    {
-        config->github_repo_directory = trimmed_value;
-    }
-    else if (normalized == "github_repo_filename_prefix")
-    {
-        if (!trimmed_value.empty())
-        {
-            config->github_repo_filename_prefix = trimmed_value;
-        }
     }
     else if (normalized == "yuque_token")
     {
@@ -215,34 +213,9 @@ void ApplyConfigValue(AppConfig *config, const std::string &key, const std::stri
     {
         config->obsidian_folder = trimmed_value;
     }
-    else if (normalized == "obsidian_filename_prefix")
+    else if (normalized == "obsidian_tags")
     {
-        if (!trimmed_value.empty())
-        {
-            config->obsidian_filename_prefix = trimmed_value;
-        }
-    }
-    else if (normalized == "local_git_repo_dir")
-    {
-        if (!trimmed_value.empty())
-        {
-            config->local_git_repo_dir = fs::path(Utf8ToWide(trimmed_value));
-        }
-    }
-    else if (normalized == "local_git_directory")
-    {
-        config->local_git_directory = trimmed_value;
-    }
-    else if (normalized == "local_git_filename_prefix")
-    {
-        if (!trimmed_value.empty())
-        {
-            config->local_git_filename_prefix = trimmed_value;
-        }
-    }
-    else if (normalized == "local_git_auto_commit")
-    {
-        config->local_git_auto_commit = ParseBool(trimmed_value);
+        config->obsidian_tags = trimmed_value;
     }
     else if (normalized == "max_clipboard_bytes")
     {
@@ -264,6 +237,31 @@ void ApplyConfigValue(AppConfig *config, const std::string &key, const std::stri
     {
         config->http_retry_attempts = std::max(0, std::min(8, ParseIntOrDefault(trimmed_value, 3)));
     }
+}
+
+bool IsApplyConfigProtocolUrl(const std::wstring &arg)
+{
+    return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"apply-config") != std::wstring::npos;
+}
+
+bool IsOpenConfigPageProtocolUrl(const std::wstring &arg)
+{
+    return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"open-config-page") != std::wstring::npos;
+}
+
+bool IsValidateConfigProtocolUrl(const std::wstring &arg)
+{
+    return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"validate-config") != std::wstring::npos;
+}
+
+bool IsOpenConfigDiagnosticsProtocolUrl(const std::wstring &arg)
+{
+    return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"open-config-diagnostics") != std::wstring::npos;
+}
+
+bool IsOpenRecentUploadsProtocolUrl(const std::wstring &arg)
+{
+    return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"open-recent-uploads") != std::wstring::npos;
 }
 }
 
@@ -305,43 +303,6 @@ AppConfig LoadConfig(const fs::path &path)
     if (config.webhook_bearer_token.empty())
     {
         config.webhook_bearer_token = GetEnvUtf8(L"NCW_WEBHOOK_BEARER_TOKEN");
-    }
-    if (config.github_token.empty())
-    {
-        std::string github_token = GetEnvUtf8(L"NCW_GITHUB_TOKEN");
-        if (github_token.empty())
-        {
-            github_token = GetEnvUtf8(L"GITHUB_TOKEN");
-        }
-        config.github_token = github_token;
-    }
-    if (const std::string gist_public = GetEnvUtf8(L"NCW_GITHUB_GIST_PUBLIC"); !gist_public.empty())
-    {
-        config.github_gist_public = ParseBool(gist_public);
-    }
-    if (const std::string gist_prefix = GetEnvUtf8(L"NCW_GITHUB_GIST_FILENAME_PREFIX"); !gist_prefix.empty())
-    {
-        config.github_gist_filename_prefix = Trim(gist_prefix);
-    }
-    if (config.github_repo_owner.empty())
-    {
-        config.github_repo_owner = Trim(GetEnvUtf8(L"NCW_GITHUB_REPO_OWNER"));
-    }
-    if (config.github_repo_name.empty())
-    {
-        config.github_repo_name = Trim(GetEnvUtf8(L"NCW_GITHUB_REPO_NAME"));
-    }
-    if (config.github_repo_branch.empty())
-    {
-        config.github_repo_branch = Trim(GetEnvUtf8(L"NCW_GITHUB_REPO_BRANCH"));
-    }
-    if (const std::string repo_dir = GetEnvUtf8(L"NCW_GITHUB_REPO_DIRECTORY"); !repo_dir.empty())
-    {
-        config.github_repo_directory = Trim(repo_dir);
-    }
-    if (const std::string repo_prefix = GetEnvUtf8(L"NCW_GITHUB_REPO_FILENAME_PREFIX"); !repo_prefix.empty())
-    {
-        config.github_repo_filename_prefix = Trim(repo_prefix);
     }
     if (config.yuque_token.empty())
     {
@@ -393,28 +354,9 @@ AppConfig LoadConfig(const fs::path &path)
     {
         config.obsidian_folder = Trim(obsidian_folder);
     }
-    if (const std::string obsidian_prefix = GetEnvUtf8(L"NCW_OBSIDIAN_FILENAME_PREFIX"); !obsidian_prefix.empty())
+    if (const std::string obsidian_tags = GetEnvUtf8(L"NCW_OBSIDIAN_TAGS"); !obsidian_tags.empty())
     {
-        config.obsidian_filename_prefix = Trim(obsidian_prefix);
-    }
-    if (config.local_git_repo_dir.empty())
-    {
-        if (const std::string repo_dir = GetEnvUtf8(L"NCW_LOCAL_GIT_REPO_DIR"); !repo_dir.empty())
-        {
-            config.local_git_repo_dir = fs::path(Utf8ToWide(repo_dir));
-        }
-    }
-    if (const std::string git_dir = GetEnvUtf8(L"NCW_LOCAL_GIT_DIRECTORY"); !git_dir.empty())
-    {
-        config.local_git_directory = Trim(git_dir);
-    }
-    if (const std::string git_prefix = GetEnvUtf8(L"NCW_LOCAL_GIT_FILENAME_PREFIX"); !git_prefix.empty())
-    {
-        config.local_git_filename_prefix = Trim(git_prefix);
-    }
-    if (const std::string git_auto_commit = GetEnvUtf8(L"NCW_LOCAL_GIT_AUTO_COMMIT"); !git_auto_commit.empty())
-    {
-        config.local_git_auto_commit = ParseBool(git_auto_commit);
+        config.obsidian_tags = Trim(obsidian_tags);
     }
     return config;
 }
@@ -462,6 +404,66 @@ CliOptions ParseCli(int argc, wchar_t **argv)
             }
             options.config_path = fs::path(argv[++i]);
         }
+        else if (arg == L"--apply-config-url")
+        {
+            if (i + 1 >= argc)
+            {
+                throw std::runtime_error("--apply-config-url 缺少 URL");
+            }
+            options.apply_config_url = WideToUtf8(argv[++i]);
+        }
+        else if (arg == L"--open-config-page-url")
+        {
+            if (i + 1 >= argc)
+            {
+                throw std::runtime_error("--open-config-page-url 缺少 URL");
+            }
+            options.open_config_page_url = WideToUtf8(argv[++i]);
+        }
+        else if (arg == L"--validate-config-url")
+        {
+            if (i + 1 >= argc)
+            {
+                throw std::runtime_error("--validate-config-url 缺少 URL");
+            }
+            options.validate_config_url = WideToUtf8(argv[++i]);
+        }
+        else if (arg == L"--open-config-diagnostics-url")
+        {
+            if (i + 1 >= argc)
+            {
+                throw std::runtime_error("--open-config-diagnostics-url 缺少 URL");
+            }
+            options.open_config_diagnostics_url = WideToUtf8(argv[++i]);
+        }
+        else if (arg == L"--open-recent-uploads-url")
+        {
+            if (i + 1 >= argc)
+            {
+                throw std::runtime_error("--open-recent-uploads-url 缺少 URL");
+            }
+            options.open_recent_uploads_url = WideToUtf8(argv[++i]);
+        }
+        else if (IsApplyConfigProtocolUrl(arg))
+        {
+            options.apply_config_url = WideToUtf8(arg);
+        }
+        else if (IsOpenConfigPageProtocolUrl(arg))
+        {
+            options.open_config_page_url = WideToUtf8(arg);
+        }
+        else if (IsValidateConfigProtocolUrl(arg))
+        {
+            options.validate_config_url = WideToUtf8(arg);
+        }
+        else if (IsOpenConfigDiagnosticsProtocolUrl(arg))
+        {
+            options.open_config_diagnostics_url = WideToUtf8(arg);
+        }
+        else if (IsOpenRecentUploadsProtocolUrl(arg))
+        {
+            options.open_recent_uploads_url = WideToUtf8(arg);
+        }
         else
         {
             throw std::runtime_error("未知参数: " + WideToUtf8(arg));
@@ -483,12 +485,15 @@ void PrintHelp()
               << "默认热键:\n"
               << "  Ctrl+Shift+B\n\n"
               << "上传后端:\n"
-              << "  upload_target=notion、markdown_file、obsidian、local_git、webhook、github_gist、github_repo、yuque 或 feishu_doc\n\n"
+              << "  upload_target=notion 或 upload_target=notion,obsidian\n"
+              << "  当前主路径: Notion、Obsidian；" << SupportedUploadTargetsText() << "\n\n"
               << "配置默认路径:\n"
               << "  " << WideToUtf8(DefaultConfigPath().wstring()) << "\n";
 }
 
-void ValidateConfigOrThrow(const AppConfig &config)
+namespace
+{
+void ValidateSingleUploadTargetOrThrow(const AppConfig &config)
 {
     if (config.upload_target == "notion")
     {
@@ -516,30 +521,6 @@ void ValidateConfigOrThrow(const AppConfig &config)
         {
             throw std::runtime_error("obsidian_vault_dir 不存在或不是目录");
         }
-        if (Trim(config.obsidian_filename_prefix).empty())
-        {
-            throw std::runtime_error("obsidian_filename_prefix 不能为空");
-        }
-        return;
-    }
-    if (config.upload_target == "local_git")
-    {
-        if (config.local_git_repo_dir.empty())
-        {
-            throw std::runtime_error("local_git_repo_dir 不能为空");
-        }
-        if (!fs::exists(config.local_git_repo_dir) || !fs::is_directory(config.local_git_repo_dir))
-        {
-            throw std::runtime_error("local_git_repo_dir 不存在或不是目录");
-        }
-        if (!fs::exists(config.local_git_repo_dir / L".git"))
-        {
-            throw std::runtime_error("local_git_repo_dir 不是 Git 工作区");
-        }
-        if (Trim(config.local_git_filename_prefix).empty())
-        {
-            throw std::runtime_error("local_git_filename_prefix 不能为空");
-        }
         return;
     }
     if (config.upload_target == "webhook")
@@ -556,38 +537,6 @@ void ValidateConfigOrThrow(const AppConfig &config)
         if (config.webhook_url.find_first_of(" \t\r\n") != std::string::npos)
         {
             throw std::runtime_error("webhook_url 不能包含空白字符");
-        }
-        return;
-    }
-    if (config.upload_target == "github_gist")
-    {
-        if (config.github_token.empty())
-        {
-            throw std::runtime_error("缺少 GitHub token，请在配置里设置 github_token 或设置 NCW_GITHUB_TOKEN");
-        }
-        if (Trim(config.github_gist_filename_prefix).empty())
-        {
-            throw std::runtime_error("github_gist_filename_prefix 不能为空");
-        }
-        return;
-    }
-    if (config.upload_target == "github_repo")
-    {
-        if (config.github_token.empty())
-        {
-            throw std::runtime_error("缺少 GitHub token，请在配置里设置 github_token 或设置 NCW_GITHUB_TOKEN");
-        }
-        if (Trim(config.github_repo_owner).empty())
-        {
-            throw std::runtime_error("github_repo_owner 不能为空");
-        }
-        if (Trim(config.github_repo_name).empty())
-        {
-            throw std::runtime_error("github_repo_name 不能为空");
-        }
-        if (Trim(config.github_repo_filename_prefix).empty())
-        {
-            throw std::runtime_error("github_repo_filename_prefix 不能为空");
         }
         return;
     }
@@ -619,7 +568,30 @@ void ValidateConfigOrThrow(const AppConfig &config)
         }
         return;
     }
-    throw std::runtime_error("未知 upload_target: " + config.upload_target +
-                             "，支持 notion、markdown_file、obsidian、local_git、webhook、github_gist、github_repo、yuque 或 feishu_doc");
+    throw std::runtime_error("未知 upload_target: " + config.upload_target + "，支持 " + SupportedUploadTargetsText());
+}
+}
+
+void ValidateConfigOrThrow(const AppConfig &config)
+{
+    const std::vector<std::string> targets = ParseUploadTargets(config.upload_target);
+    if (targets.empty())
+    {
+        throw std::runtime_error("upload_target 不能为空，支持 " + SupportedUploadTargetsText());
+    }
+
+    for (const std::string &target : targets)
+    {
+        AppConfig target_config = config;
+        target_config.upload_target = target;
+        try
+        {
+            ValidateSingleUploadTargetOrThrow(target_config);
+        }
+        catch (const std::exception &ex)
+        {
+            throw std::runtime_error("upload_target=" + target + " 配置无效: " + ex.what());
+        }
+    }
 }
 }

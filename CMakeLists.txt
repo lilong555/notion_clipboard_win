@@ -37,6 +37,7 @@ add_executable(notion_clipboard_win
     src/http_client.cpp
     src/json.cpp
     src/logger.cpp
+    src/obsidian.cpp
     src/queue.cpp
     src/upload_target.cpp
     src/util.cpp

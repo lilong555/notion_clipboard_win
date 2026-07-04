@@ -151,6 +151,7 @@ std::size_t FindRepeatedCharRun(const std::string &text, std::size_t pos, char c
 bool IsEscaped(const std::string &text, std::size_t pos);
 std::string UnescapeMarkdownText(const std::string &text, bool preserve_inline_math_parentheses = false);
 std::string StripNonMathDollarMarkersForPlainText(const std::string &text);
+std::string DedentBlockText(const std::string &text);
 bool LooksLikeAsciiFunctionFormula(const std::string &expression);
 bool ExtractMarkdownImage(const std::string &text, std::size_t pos, std::string *alt_text, std::string *url,
                           std::size_t *end_pos);
@@ -773,11 +774,32 @@ bool ShouldInsertLatexBackslash(const std::string &token)
         "approx", "cdot", "times", "div", "leq", "geq", "neq", "infty", "partial", "nabla", "sum", "prod",
         "int", "sqrt", "frac", "dfrac", "tfrac", "log", "ln", "sin", "cos", "tan", "cot", "exp", "lim",
         "min", "max", "forall", "exists", "in", "notin", "subset", "subseteq", "supset", "supseteq", "cup",
-        "cap", "land", "lor", "to", "rightarrow", "Rightarrow", "leftarrow", "Leftarrow", "cdots", "ldots",
+        "cap", "land", "lor", "rightarrow", "Rightarrow", "leftarrow", "Leftarrow", "cdots", "ldots",
         "dots", "theta", "Theta", "lambda", "mu", "phi", "Phi", "pi", "alpha", "beta", "gamma", "delta",
         "Delta", "epsilon", "eta", "rho", "sigma", "Sigma", "omega", "Omega",
     };
     return std::find(known_commands.begin(), known_commands.end(), token) != known_commands.end();
+}
+
+bool IsCodeIndexOpeningBracket(const std::string &expression, std::size_t pos)
+{
+    if (pos == 0)
+    {
+        return false;
+    }
+
+    std::size_t command_begin = pos;
+    while (command_begin > 0 && IsAsciiAlpha(expression[command_begin - 1]))
+    {
+        --command_begin;
+    }
+    if (command_begin > 0 && expression[command_begin - 1] == '\\' && !IsEscaped(expression, command_begin - 1))
+    {
+        return false;
+    }
+
+    const char prev = expression[pos - 1];
+    return IsAsciiAlnum(prev) || prev == '_' || prev == ']' || prev == ')';
 }
 
 std::size_t CountRepeatedChar(const std::string &text, std::size_t pos, char ch)
@@ -812,6 +834,7 @@ std::string InsertMissingLatexBackslashes(const std::string &expression)
 {
     std::string repaired;
     repaired.reserve(expression.size() + 16);
+    std::vector<bool> square_bracket_stack;
     for (std::size_t i = 0; i < expression.size();)
     {
         if (expression.compare(i, 6, "\\text{") == 0)
@@ -837,6 +860,14 @@ std::string InsertMissingLatexBackslashes(const std::string &expression)
 
         if (!IsAsciiAlpha(expression[i]))
         {
+            if (!IsEscaped(expression, i) && expression[i] == '[')
+            {
+                square_bracket_stack.push_back(IsCodeIndexOpeningBracket(expression, i));
+            }
+            else if (!IsEscaped(expression, i) && expression[i] == ']' && !square_bracket_stack.empty())
+            {
+                square_bracket_stack.pop_back();
+            }
             repaired.push_back(expression[i]);
             ++i;
             continue;
@@ -853,7 +884,10 @@ std::string InsertMissingLatexBackslashes(const std::string &expression)
         const bool already_escaped = prev == '\\';
         const bool starts_new_token = begin == 0 || !IsAsciiAlnum(prev);
         const bool ends_token = next == '\0' || !IsAsciiAlpha(next);
-        if (!already_escaped && starts_new_token && ends_token && ShouldInsertLatexBackslash(token))
+        const bool inside_code_index =
+            std::find(square_bracket_stack.begin(), square_bracket_stack.end(), true) != square_bracket_stack.end();
+        if (!inside_code_index && !already_escaped && starts_new_token && ends_token &&
+            ShouldInsertLatexBackslash(token))
         {
             repaired.push_back('\\');
         }
@@ -1732,6 +1766,180 @@ std::optional<std::size_t> FindMatchingInlineParenthesis(const std::string &text
         }
     }
     return std::nullopt;
+}
+
+bool LooksLikeObsidianLooseInlineMath(const std::string &expression)
+{
+    const std::string trimmed = Trim(expression);
+    if (trimmed.empty())
+    {
+        return false;
+    }
+    if (trimmed.size() == 1 && IsAsciiAlpha(trimmed[0]))
+    {
+        return true;
+    }
+    if (HasKnownMathUtf8Symbol(trimmed) || trimmed.find('\\') != std::string::npos)
+    {
+        return true;
+    }
+    if (LooksLikeAsciiFunctionFormula(trimmed))
+    {
+        return true;
+    }
+
+    bool has_ascii_alnum = false;
+    bool has_math_marker = false;
+    bool only_ascii = true;
+    for (unsigned char ch : trimmed)
+    {
+        if (ch >= 128)
+        {
+            only_ascii = false;
+            continue;
+        }
+        has_ascii_alnum = has_ascii_alnum || std::isalnum(ch) != 0;
+        has_math_marker = has_math_marker || ch == '=' || ch == '+' || ch == '-' || ch == '*' || ch == '/' ||
+                          ch == '<' || ch == '>' || ch == '^' || ch == '_' || ch == '{' || ch == '}' ||
+                          ch == ',' || ch == '(' || ch == ')';
+    }
+    return only_ascii && has_ascii_alnum && has_math_marker;
+}
+
+std::string NormalizeObsidianInlineMathLine(const std::string &line)
+{
+    std::string output;
+    output.reserve(line.size());
+
+    for (std::size_t i = 0; i < line.size();)
+    {
+        const char ch = line[i];
+        if (ch == '`')
+        {
+            const std::size_t ticks = CountRepeatedChar(line, i, '`');
+            const std::string fence(ticks, '`');
+            const std::size_t close = line.find(fence, i + ticks);
+            if (close == std::string::npos)
+            {
+                output += line.substr(i);
+                break;
+            }
+            output += line.substr(i, close + ticks - i);
+            i = close + ticks;
+            continue;
+        }
+
+        if (ch == '$' && !IsEscaped(line, i))
+        {
+            const std::size_t dollars = CountRepeatedChar(line, i, '$');
+            const std::string marker(dollars >= 2 ? 2 : 1, '$');
+            const std::size_t close = line.find(marker, i + marker.size());
+            if (close != std::string::npos)
+            {
+                output += line.substr(i, close + marker.size() - i);
+                i = close + marker.size();
+                continue;
+            }
+        }
+
+        if (ch == '(' && !IsEscaped(line, i) && (i == 0 || (!IsAsciiAlnum(line[i - 1]) && line[i - 1] != '\\')) &&
+            (i == 0 || line[i - 1] != ']'))
+        {
+            const std::optional<std::size_t> close = FindMatchingInlineParenthesis(line, i);
+            if (close.has_value())
+            {
+                const std::string inner = line.substr(i + 1, *close - i - 1);
+                if (LooksLikeObsidianLooseInlineMath(inner))
+                {
+                    output += "$";
+                    output += RepairLatexExpression(inner);
+                    output += "$";
+                    i = *close + 1;
+                    continue;
+                }
+            }
+        }
+
+        output.push_back(ch);
+        ++i;
+    }
+
+    return output;
+}
+
+std::string JoinLinesPreserveFinalEmpty(const std::vector<std::string> &lines)
+{
+    std::ostringstream output;
+    for (std::size_t i = 0; i < lines.size(); ++i)
+    {
+        if (i > 0)
+        {
+            output << "\n";
+        }
+        output << lines[i];
+    }
+    return output.str();
+}
+
+std::string NormalizeMarkdownForObsidian(const std::string &text)
+{
+    const std::vector<std::string> lines = SplitLinesPreserveEmpty(StripUtf8Bom(NormalizeLineEndings(text)));
+    std::vector<std::string> output;
+    output.reserve(lines.size());
+
+    for (std::size_t i = 0; i < lines.size();)
+    {
+        char fence_char = '\0';
+        std::size_t fence_len = 0;
+        if (StartsWithFence(lines[i], &fence_char, &fence_len))
+        {
+            output.push_back(lines[i++]);
+            while (i < lines.size())
+            {
+                output.push_back(lines[i]);
+                const bool closing = IsClosingFenceLine(lines[i], fence_char, fence_len);
+                ++i;
+                if (closing)
+                {
+                    break;
+                }
+            }
+            continue;
+        }
+
+        const std::string trimmed = Trim(lines[i]);
+        if (IsLooseBracketEquationFenceStart(trimmed))
+        {
+            std::size_t cursor = i + 1;
+            std::string expression;
+            while (cursor < lines.size() && !IsLooseBracketEquationFenceEnd(Trim(lines[cursor])))
+            {
+                if (!expression.empty())
+                {
+                    expression += "\n";
+                }
+                expression += lines[cursor];
+                ++cursor;
+            }
+            if (cursor < lines.size() && LooksLikeBlockLatexExpression(expression))
+            {
+                const std::string repaired = RepairLatexExpression(DedentBlockText(expression));
+                if (!repaired.empty())
+                {
+                    output.push_back("$$");
+                    output.push_back(repaired);
+                    output.push_back("$$");
+                    i = cursor + 1;
+                    continue;
+                }
+            }
+        }
+
+        output.push_back(NormalizeObsidianInlineMathLine(lines[i]));
+        ++i;
+    }
+
+    return JoinLinesPreserveFinalEmpty(output);
 }
 
 bool IsInlineDollarOpenAllowed(const std::string &text, std::size_t pos)
@@ -6487,6 +6695,40 @@ int RunSelfTest()
          {"\"expression\":\"r-l+1\"", "\"expression\":\"\\\\left\\\\lfloor \\\\frac{(5-1)^2}{4} \\\\right\\\\rfloor\\n\\n\\\\frac{16}{4}\\n\\n4\"",
           "\"language\":\"plain text\"", "010101"},
          {"=========================", "\"expression\":\"# \\\\frac{16}{4}\"", "\"type\":\"heading_1\""}},
+        {"code variable to remains literal in formulas",
+         "换根到 `to` 后，根在 `to` 这一侧，贡献变成：\n\n"
+         "[\n"
+         "(n-cnt[to]) \\times (a[cr]\\oplus a[to])\n"
+         "]\n\n"
+         "所以：\n\n"
+         "[\n"
+         "ans[to] = ans[cr] + (n - 2cnt[to]) \\times (a[cr]\\oplus a[to])\n"
+         "]\n",
+         "",
+         2,
+         0,
+         0,
+         0,
+         {"\"expression\":\"(n-cnt[to]) \\\\times (a[cr]\\\\oplus a[to])\"",
+          "\"expression\":\"ans[to] = ans[cr] + (n - 2cnt[to]) \\\\times (a[cr]\\\\oplus a[to])\""},
+         {"\\\\to", "cnt[\\\\to]", "ans[\\\\to]"}},
+        {"code index names remain literal in formulas",
+         "代码式下标里的名字不能被符号化：\n\n"
+         "[\n"
+         "dp[in] + a[pi] + b[mu] + pre[sum+1] + best[max]\n"
+         "]\n\n"
+         "普通数学命令仍然可以修复：\n\n"
+         "[\n"
+         "x in S + sum_{i=1}^n i\n"
+         "]\n",
+         "",
+         2,
+         0,
+         0,
+         0,
+         {"\"expression\":\"dp[in] + a[pi] + b[mu] + pre[sum+1] + best[max]\"",
+          "\"expression\":\"x \\\\in S + \\\\sum_{i=1}^n i\""},
+         {"dp[\\\\in]", "a[\\\\pi]", "b[\\\\mu]", "pre[\\\\sum+1]", "best[\\\\max]"}},
         {"screenshot loose bracket answer formulas",
          "那么：\n\n"
          "> 一个非空二进制串是 beautiful，当且仅当\n\n"

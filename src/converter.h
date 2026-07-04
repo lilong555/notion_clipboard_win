@@ -11,6 +11,7 @@ std::string NormalizeLineEndings(std::string text);
 std::string TruncateUtf8(const std::string &text, std::size_t max_chars);
 std::string CollapseWhitespace(const std::string &text);
 std::string StripNonMathDollarMarkersForPlainText(const std::string &text);
+std::string NormalizeMarkdownForObsidian(const std::string &text);
 std::string BuildTitleFromContent(const std::string &content);
 std::string BuildTextRichText(const std::string &text, bool bold = false, bool code = false,
                               bool strikethrough = false, const std::string &link_url = "", bool italic = false,

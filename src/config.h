@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <string>
+#include <vector>
 
 namespace ncw
 {
@@ -14,14 +15,6 @@ struct AppConfig
     std::string notion_token;
     std::string webhook_url;
     std::string webhook_bearer_token;
-    std::string github_token;
-    bool github_gist_public = false;
-    std::string github_gist_filename_prefix = "clipboard";
-    std::string github_repo_owner;
-    std::string github_repo_name;
-    std::string github_repo_branch;
-    std::string github_repo_directory = "clipboard";
-    std::string github_repo_filename_prefix = "clipboard";
     std::string yuque_token;
     std::string yuque_namespace;
     std::string yuque_slug_prefix = "clipboard";
@@ -47,11 +40,7 @@ struct AppConfig
     std::filesystem::path markdown_output_dir;
     std::filesystem::path obsidian_vault_dir;
     std::string obsidian_folder = "Clipboard";
-    std::string obsidian_filename_prefix = "clipboard";
-    std::filesystem::path local_git_repo_dir;
-    std::string local_git_directory = "clipboard";
-    std::string local_git_filename_prefix = "clipboard";
-    bool local_git_auto_commit = false;
+    std::string obsidian_tags;
     std::uint64_t max_clipboard_bytes = 262144;
     int min_request_interval_ms = 400;
     int append_batch_size = 40;
@@ -65,6 +54,11 @@ struct CliOptions
 
     std::filesystem::path config_path;
     std::filesystem::path dry_run_file_path;
+    std::string apply_config_url;
+    std::string open_config_page_url;
+    std::string validate_config_url;
+    std::string open_config_diagnostics_url;
+    std::string open_recent_uploads_url;
     bool once = false;
     bool validate_config = false;
     bool dry_run = false;
@@ -73,6 +67,7 @@ struct CliOptions
 };
 
 std::string CanonicalizeNotionId(std::string input);
+std::vector<std::string> ParseUploadTargets(const std::string &value);
 AppConfig LoadConfig(const std::filesystem::path &path);
 CliOptions ParseCli(int argc, wchar_t **argv);
 void PrintHelp();

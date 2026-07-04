@@ -8,6 +8,7 @@
 #include "converter.h"
 #include "hotkey.h"
 #include "logger.h"
+#include "obsidian.h"
 #include "queue.h"
 #include "resource.h"
 #include "upload_target.h"
@@ -19,6 +20,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdint>
+#include <cwchar>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -28,6 +30,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -52,23 +55,28 @@ using ncw::Hex64;
 using ncw::HtmlFragmentToMarkdown;
 using ncw::HotkeySpec;
 using ncw::HotkeySpecFromRecordedKey;
+using ncw::IsoUtcTimestampFromUnixMs;
 using ncw::IsAutoStartEnabled;
 using ncw::IsModifierVirtualKey;
 using ncw::Logger;
 using ncw::LoadConfig;
+using ncw::ModuleDirectory;
 using ncw::NowUnixMs;
 using ncw::NormalizeLineEndings;
 using ncw::ParseHotkeyOrThrow;
 using ncw::ParseCli;
+using ncw::ParseUploadTargets;
 using ncw::PrintHelp;
 using ncw::PersistentQueue;
 using ncw::ReadWholeFile;
 using ncw::RunDryRunText;
 using ncw::RunConfigPageSelfTest;
+using ncw::RunObsidianSelfTest;
 using ncw::RunSelfTest;
 using ncw::RunUploadTargetSelfTest;
 using ncw::SetAutoStartEnabled;
 using ncw::Trim;
+using ncw::ToLowerAscii;
 using ncw::UpsertConfigValue;
 using ncw::UploadFailure;
 using ncw::UploadJob;
@@ -82,6 +90,7 @@ constexpr UINT_PTR kClipboardDebounceTimer = 1001;
 constexpr UINT kUploadHotkeyId = 2001;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayCallbackMessage = WM_APP + 1;
+constexpr UINT kUploadResultMessage = WM_APP + 2;
 constexpr UINT kMenuUploadNow = 3001;
 constexpr UINT kMenuHotkeyStatus = 3002;
 constexpr UINT kMenuToggleHotkey = 3003;
@@ -94,11 +103,371 @@ constexpr UINT kMenuOpenLog = 3009;
 constexpr UINT kMenuOpenStateDir = 3010;
 constexpr UINT kMenuExit = 3011;
 constexpr UINT kMenuOpenConfigPage = 3012;
+constexpr UINT kMenuOpenRecentUploads = 3013;
+constexpr UINT kMenuValidateConfig = 3014;
+constexpr UINT kMenuOpenConfigDiagnostics = 3015;
+constexpr UINT kMenuOpenLastObsidian = 3016;
 constexpr const wchar_t *kAppDisplayName = L"Notion Clipboard Win";
 
 #ifndef NIF_SHOWTIP
 #define NIF_SHOWTIP 0x00000080
 #endif
+
+struct UploadResultNotice
+{
+    std::wstring title;
+    std::wstring message;
+};
+
+std::wstring TruncateWide(std::wstring text, std::size_t max_chars)
+{
+    if (text.size() <= max_chars)
+    {
+        return text;
+    }
+    if (max_chars <= 3)
+    {
+        return text.substr(0, max_chars);
+    }
+    return text.substr(0, max_chars - 3) + L"...";
+}
+
+std::wstring UploadTargetDisplayName(const std::string &target)
+{
+    if (target == "notion")
+    {
+        return L"Notion";
+    }
+    if (target == "obsidian")
+    {
+        return L"Obsidian";
+    }
+    if (target == "markdown_file")
+    {
+        return L"Markdown 文件";
+    }
+    if (target == "webhook")
+    {
+        return L"Webhook";
+    }
+    if (target == "yuque")
+    {
+        return L"语雀";
+    }
+    if (target == "feishu_doc")
+    {
+        return L"飞书文档";
+    }
+    return Utf8ToWide(target);
+}
+
+std::wstring JoinTargetDisplayNames(const std::vector<std::string> &targets)
+{
+    std::wstring joined;
+    for (const std::string &target : targets)
+    {
+        if (!joined.empty())
+        {
+            joined += L"、";
+        }
+        joined += UploadTargetDisplayName(target);
+    }
+    return joined;
+}
+
+std::string UploadJobLocation(const UploadJob &job)
+{
+    if (job.target == "obsidian" && !job.remote_id.empty())
+    {
+        return job.remote_id;
+    }
+    return job.remote_url.empty() ? job.remote_id : job.remote_url;
+}
+
+std::string ReportLineValue(std::string value)
+{
+    value = NormalizeLineEndings(std::move(value));
+    std::replace(value.begin(), value.end(), '\n', ' ');
+    return Trim(value);
+}
+
+std::string PercentEncodeFileUriPath(const std::string &value)
+{
+    static constexpr char kHex[] = "0123456789ABCDEF";
+    std::string output;
+    output.reserve(value.size());
+    for (unsigned char ch : value)
+    {
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' ||
+            ch == '_' || ch == '.' || ch == '~' || ch == '/' || ch == ':')
+        {
+            output.push_back(static_cast<char>(ch));
+            continue;
+        }
+        output.push_back('%');
+        output.push_back(kHex[(ch >> 4) & 0x0f]);
+        output.push_back(kHex[ch & 0x0f]);
+    }
+    return output;
+}
+
+std::string BuildFileUriFromUtf8Path(const std::string &path_text)
+{
+    if (Trim(path_text).empty())
+    {
+        return "";
+    }
+
+    std::error_code ec;
+    std::filesystem::path path = std::filesystem::path(Utf8ToWide(path_text));
+    if (!path.is_absolute())
+    {
+        path = std::filesystem::absolute(path, ec);
+        if (ec)
+        {
+            return "";
+        }
+    }
+
+    std::string generic = WideToUtf8(path.generic_wstring());
+    std::replace(generic.begin(), generic.end(), '\\', '/');
+    if (generic.empty())
+    {
+        return "";
+    }
+
+    if (generic.rfind("//", 0) == 0)
+    {
+        return "file:" + PercentEncodeFileUriPath(generic);
+    }
+    if (generic.size() >= 2 && generic[1] == ':')
+    {
+        return "file:///" + PercentEncodeFileUriPath(generic);
+    }
+    if (generic.front() == '/')
+    {
+        return "file://" + PercentEncodeFileUriPath(generic);
+    }
+    return "file:///" + PercentEncodeFileUriPath(generic);
+}
+
+std::filesystem::path RecentUploadResultsPath(const AppConfig &config)
+{
+    return config.state_dir / L"recent-upload-results.md";
+}
+
+std::filesystem::path LastObsidianUploadPath(const AppConfig &config)
+{
+    return config.state_dir / L"last-obsidian-upload.ini";
+}
+
+std::filesystem::path ConfigDiagnosticsPath(const AppConfig &config)
+{
+    return config.state_dir / L"config-diagnostics.md";
+}
+
+void AppendUploadResultLocationFields(std::ostringstream *entry, const UploadJob &job)
+{
+    if (job.target == "notion")
+    {
+        if (!job.remote_url.empty())
+        {
+            *entry << "- Notion URL: <" << ReportLineValue(job.remote_url) << ">\n";
+        }
+        if (!job.remote_id.empty())
+        {
+            *entry << "- Notion Page ID: " << ReportLineValue(job.remote_id) << "\n";
+        }
+        return;
+    }
+
+    if (job.target == "obsidian")
+    {
+        if (!job.remote_id.empty())
+        {
+            *entry << "- Obsidian File: " << ReportLineValue(job.remote_id) << "\n";
+            const std::string file_uri = BuildFileUriFromUtf8Path(job.remote_id);
+            if (!file_uri.empty())
+            {
+                *entry << "- Local File URI: <" << file_uri << ">\n";
+            }
+        }
+        if (!job.remote_url.empty() && job.remote_url.rfind("obsidian://", 0) == 0)
+        {
+            *entry << "- Obsidian URI: <" << ReportLineValue(job.remote_url) << ">\n";
+        }
+        else if (!job.remote_url.empty() && job.remote_url != job.remote_id)
+        {
+            *entry << "- Location: " << ReportLineValue(job.remote_url) << "\n";
+        }
+        return;
+    }
+
+    const std::string location = UploadJobLocation(job);
+    if (!location.empty())
+    {
+        *entry << "- Location: " << ReportLineValue(location) << "\n";
+    }
+}
+
+void WriteRecentUploadResultReport(const std::filesystem::path &path, const UploadJob &job, bool success,
+                                   const std::string &detail)
+{
+    std::ostringstream entry;
+    entry << "## " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << " - " << (success ? "SUCCESS" : "FAILED") << " - "
+          << ReportLineValue(job.target) << "\n\n"
+          << "- Title: " << ReportLineValue(job.title) << "\n"
+          << "- Target: " << ReportLineValue(job.target) << "\n"
+          << "- Job: " << ReportLineValue(job.id) << "\n";
+
+    AppendUploadResultLocationFields(&entry, job);
+    if (!success && !detail.empty())
+    {
+        entry << "- Error: " << ReportLineValue(detail) << "\n";
+    }
+    entry << "\n";
+
+    std::string previous;
+    try
+    {
+        if (fs::exists(path))
+        {
+            previous = ReadWholeFile(path);
+        }
+    }
+    catch (...)
+    {
+        previous.clear();
+    }
+
+    constexpr std::size_t kMaxRecentUploadReportBytes = 128ull * 1024ull;
+    const std::string heading = "# Recent Upload Results\n\n";
+    if (previous.rfind(heading, 0) == 0)
+    {
+        previous.erase(0, heading.size());
+    }
+    std::string content = heading + entry.str() + previous;
+    if (content.size() > kMaxRecentUploadReportBytes)
+    {
+        content.resize(kMaxRecentUploadReportBytes);
+    }
+    AtomicWriteFile(path, content);
+}
+
+void WriteLastObsidianUploadState(const std::filesystem::path &path, const UploadJob &job)
+{
+    if (job.target != "obsidian" || job.remote_id.empty())
+    {
+        return;
+    }
+
+    std::ostringstream content;
+    content << "updated=" << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
+            << "title=" << ReportLineValue(job.title) << "\n"
+            << "file=" << ReportLineValue(job.remote_id) << "\n";
+    if (!job.remote_url.empty() && job.remote_url.rfind("obsidian://", 0) == 0)
+    {
+        content << "uri=" << ReportLineValue(job.remote_url) << "\n";
+    }
+    AtomicWriteFile(path, content.str());
+}
+
+std::optional<std::string> ReadStateValue(const std::filesystem::path &path, const std::string &key)
+{
+    if (!std::filesystem::exists(path))
+    {
+        return std::nullopt;
+    }
+
+    const std::string normalized_key = ToLowerAscii(Trim(key));
+    std::istringstream input(ReadWholeFile(path));
+    std::string line;
+    while (std::getline(input, line))
+    {
+        line = Trim(line);
+        if (line.empty() || line[0] == '#' || line[0] == ';')
+        {
+            continue;
+        }
+        const std::size_t eq = line.find('=');
+        if (eq == std::string::npos)
+        {
+            continue;
+        }
+        if (ToLowerAscii(Trim(line.substr(0, eq))) == normalized_key)
+        {
+            return Trim(line.substr(eq + 1));
+        }
+    }
+    return std::nullopt;
+}
+
+void AppendTargetConfigSummary(std::ostringstream *report, const AppConfig &config)
+{
+    if (config.upload_target == "notion")
+    {
+        *report << "- Token: " << (config.notion_token.empty() ? "missing" : "present") << "\n"
+                << "- Data Source ID: " << (config.data_source_id.empty() ? "(empty)" : ReportLineValue(config.data_source_id))
+                << "\n"
+                << "- Database ID: " << (config.database_id.empty() ? "(empty)" : ReportLineValue(config.database_id))
+                << "\n";
+        return;
+    }
+    if (config.upload_target == "obsidian")
+    {
+        *report << "- Vault: " << ReportLineValue(WideToUtf8(config.obsidian_vault_dir.wstring())) << "\n"
+                << "- Folder: " << (config.obsidian_folder.empty() ? "(vault root)" : ReportLineValue(config.obsidian_folder))
+                << "\n"
+                << "- Tags: " << (Trim(config.obsidian_tags).empty() ? "(none)" : ReportLineValue(config.obsidian_tags))
+                << "\n";
+        return;
+    }
+}
+
+bool WriteConfigDiagnosticsReport(const std::filesystem::path &path, const AppConfig &config, Logger *logger)
+{
+    const std::vector<std::string> targets = ParseUploadTargets(config.upload_target);
+    bool all_ok = !targets.empty();
+
+    std::ostringstream report;
+    report << "# Configuration Diagnostics\n\n"
+           << "- Generated: " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
+           << "- Upload target: " << ReportLineValue(config.upload_target) << "\n"
+           << "- State dir: " << ReportLineValue(WideToUtf8(config.state_dir.wstring())) << "\n\n";
+
+    if (targets.empty())
+    {
+        report << "## Overall\n\n- Status: FAILED\n- Error: upload_target is empty\n\n";
+        AtomicWriteFile(path, report.str());
+        return false;
+    }
+
+    for (const std::string &target : targets)
+    {
+        AppConfig target_config = config;
+        target_config.upload_target = target;
+
+        report << "## " << ReportLineValue(target) << "\n\n";
+        AppendTargetConfigSummary(&report, target_config);
+
+        try
+        {
+            ValidateConfigOrThrow(target_config);
+            std::unique_ptr<UploadTarget> upload_target = CreateUploadTarget(target_config, logger);
+            upload_target->Validate();
+            report << "- Status: OK\n\n";
+        }
+        catch (const std::exception &ex)
+        {
+            all_ok = false;
+            report << "- Status: FAILED\n"
+                   << "- Error: " << ReportLineValue(ex.what()) << "\n\n";
+        }
+    }
+
+    AtomicWriteFile(path, report.str());
+    return all_ok;
+}
 
 HICON LoadApplicationIcon(HINSTANCE instance, int width, int height)
 {
@@ -133,6 +502,8 @@ UploadJob MakeUploadJob(const std::string &content, const std::string &target)
 class UploadWorker
 {
 public:
+    using ResultCallback = std::function<void(const UploadJob &, bool, const std::string &)>;
+
     UploadWorker(PersistentQueue *queue, UploadTarget *target, Logger *logger)
         : queue_(queue), target_(target), logger_(logger)
     {
@@ -148,6 +519,10 @@ public:
     void Stop()
     {
         stop_.store(true);
+        {
+            std::lock_guard<std::mutex> lock(wait_mutex_);
+            wake_requested_ = true;
+        }
         cv_.notify_all();
         if (thread_.joinable())
         {
@@ -157,10 +532,33 @@ public:
 
     void Notify()
     {
+        {
+            std::lock_guard<std::mutex> lock(wait_mutex_);
+            wake_requested_ = true;
+        }
         cv_.notify_all();
     }
 
+    void SetResultCallback(ResultCallback callback)
+    {
+        std::lock_guard<std::mutex> lock(callback_mutex_);
+        result_callback_ = std::move(callback);
+    }
+
 private:
+    void EmitResult(const UploadJob &job, bool success, const std::string &detail)
+    {
+        ResultCallback callback;
+        {
+            std::lock_guard<std::mutex> lock(callback_mutex_);
+            callback = result_callback_;
+        }
+        if (callback)
+        {
+            callback(job, success, detail);
+        }
+    }
+
     void Run()
     {
         if (logger_ != nullptr)
@@ -189,14 +587,17 @@ private:
                 {
                     logger_->Info("上传成功: " + job.id + (job.remote_url.empty() ? "" : " -> " + job.remote_url));
                 }
+                EmitResult(job, true, "");
             }
             catch (const UploadFailure &ex)
             {
                 queue_->MarkFailure(path, job, ex.what(), ex.retryable(), ex.retry_after_seconds(), logger_);
+                EmitResult(job, false, ex.what());
             }
             catch (const std::exception &ex)
             {
                 queue_->MarkFailure(path, job, ex.what(), true, 0, logger_);
+                EmitResult(job, false, ex.what());
             }
         }
 
@@ -211,15 +612,17 @@ private:
         std::unique_lock<std::mutex> lock(wait_mutex_);
         if (next_due == 0)
         {
-            cv_.wait_for(lock, std::chrono::seconds(30), [&]
-                         { return stop_.load(); });
+            cv_.wait(lock, [this]
+                     { return stop_.load() || wake_requested_; });
+            wake_requested_ = false;
             return;
         }
 
         const std::uint64_t now = NowUnixMs();
         const std::uint64_t delay = next_due > now ? next_due - now : 0;
-        cv_.wait_for(lock, std::chrono::milliseconds(delay), [&]
-                     { return stop_.load(); });
+        cv_.wait_for(lock, std::chrono::milliseconds(delay), [this]
+                     { return stop_.load() || wake_requested_; });
+        wake_requested_ = false;
     }
 
     PersistentQueue *queue_ = nullptr;
@@ -229,6 +632,9 @@ private:
     std::thread thread_;
     std::condition_variable cv_;
     std::mutex wait_mutex_;
+    bool wake_requested_ = false;
+    std::mutex callback_mutex_;
+    ResultCallback result_callback_;
 };
 
 class DisabledUploadTarget : public UploadTarget
@@ -458,6 +864,11 @@ public:
         {
             throw std::runtime_error("创建后台窗口失败: " + LastErrorMessage());
         }
+        if (worker_ != nullptr)
+        {
+            worker_->SetResultCallback([this](const UploadJob &job, bool success, const std::string &detail)
+                                       { PostUploadResultNotice(job, success, detail); });
+        }
         SendMessageW(hwnd_, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(wc.hIcon));
         SendMessageW(hwnd_, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(wc.hIconSm));
 
@@ -583,6 +994,15 @@ private:
                 ProcessClipboard("托盘双击", true);
             }
             return 0;
+        case kUploadResultMessage:
+        {
+            std::unique_ptr<UploadResultNotice> notice(reinterpret_cast<UploadResultNotice *>(lparam));
+            if (notice)
+            {
+                ShowNotification(notice->title, notice->message);
+            }
+            return 0;
+        }
         case WM_CLIPBOARDUPDATE:
             if (clipboard_listener_registered_)
             {
@@ -656,6 +1076,66 @@ private:
         wcsncpy_s(notify.szInfoTitle, title.c_str(), _TRUNCATE);
         wcsncpy_s(notify.szInfo, message.c_str(), _TRUNCATE);
         Shell_NotifyIconW(NIM_MODIFY, &notify);
+    }
+
+    void PostUploadResultNotice(const UploadJob &job, bool success, const std::string &detail)
+    {
+        if (cleaned_up_.load() || hwnd_ == nullptr)
+        {
+            return;
+        }
+
+        try
+        {
+            WriteRecentUploadResultReport(RecentUploadResultsPath(*config_), job, success, detail);
+            if (success && job.target == "obsidian")
+            {
+                WriteLastObsidianUploadState(LastObsidianUploadPath(*config_), job);
+            }
+        }
+        catch (const std::exception &ex)
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Warn("写入最近上传结果失败: " + std::string(ex.what()));
+            }
+        }
+
+        auto notice = std::make_unique<UploadResultNotice>();
+        notice->title = L"Notion Clipboard Win";
+        const std::wstring target = UploadTargetDisplayName(job.target);
+        const std::wstring note_title = TruncateWide(Utf8ToWide(job.title), 64);
+        if (success)
+        {
+            notice->message = target + L" 上传成功";
+            if (!note_title.empty())
+            {
+                notice->message += L"：" + note_title;
+            }
+            const std::string location = UploadJobLocation(job);
+            if (!location.empty())
+            {
+                notice->message += L"\n" + TruncateWide(Utf8ToWide(location), 120);
+            }
+        }
+        else
+        {
+            notice->message = target + L" 上传失败";
+            if (!note_title.empty())
+            {
+                notice->message += L"：" + note_title;
+            }
+            if (!detail.empty())
+            {
+                notice->message += L"\n" + TruncateWide(Utf8ToWide(detail), 120);
+            }
+        }
+
+        if (!PostMessageW(hwnd_, kUploadResultMessage, 0, reinterpret_cast<LPARAM>(notice.get())))
+        {
+            return;
+        }
+        notice.release();
     }
 
     bool RegisterUploadHotkey()
@@ -753,7 +1233,13 @@ private:
                     kMenuToggleClipboardListener, L"自动监听剪贴板");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING, kMenuOpenConfigPage, L"打开配置页面");
+        AppendMenuW(menu, MF_STRING | (diagnostics_running_.load() ? MF_GRAYED : MF_ENABLED), kMenuValidateConfig,
+                    L"验证当前配置");
+        AppendMenuW(menu, MF_STRING, kMenuOpenConfigDiagnostics, L"查看配置诊断");
         AppendMenuW(menu, MF_STRING, kMenuOpenConfig, L"打开配置文件");
+        AppendMenuW(menu, MF_STRING, kMenuOpenRecentUploads, L"查看最近上传结果");
+        AppendMenuW(menu, MF_STRING | (fs::exists(LastObsidianUploadPath(*config_)) ? MF_ENABLED : MF_GRAYED),
+                    kMenuOpenLastObsidian, L"打开最近 Obsidian 笔记");
         AppendMenuW(menu, MF_STRING, kMenuOpenLog, L"查看日志");
         AppendMenuW(menu, MF_STRING, kMenuOpenStateDir, L"打开状态目录");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
@@ -793,6 +1279,18 @@ private:
             break;
         case kMenuOpenConfigPage:
             OpenConfigPage();
+            break;
+        case kMenuValidateConfig:
+            StartConfigDiagnostics();
+            break;
+        case kMenuOpenConfigDiagnostics:
+            OpenConfigDiagnostics();
+            break;
+        case kMenuOpenRecentUploads:
+            OpenRecentUploadResults();
+            break;
+        case kMenuOpenLastObsidian:
+            OpenLastObsidianUpload();
             break;
         case kMenuOpenLog:
             OpenPath(config_->state_dir / L"notion-clipboard-win.log");
@@ -1037,30 +1535,8 @@ private:
                     fs::create_directories(parent);
                 }
                 AtomicWriteFile(config_path_, "upload_target=notion\n"
-                                             "markdown_output_dir=\n"
-                                             "webhook_url=\n"
-                                             "webhook_bearer_token=\n"
-                                             "github_token=\n"
-                                             "github_gist_public=false\n"
-                                             "github_gist_filename_prefix=clipboard\n"
-                                             "github_repo_owner=\n"
-                                             "github_repo_name=\n"
-                                             "github_repo_branch=\n"
-                                             "github_repo_directory=clipboard\n"
-                                             "github_repo_filename_prefix=clipboard\n"
-                                             "yuque_token=\n"
-                                             "yuque_namespace=\n"
-                                             "yuque_slug_prefix=clipboard\n"
-                                             "feishu_app_id=\n"
-                                             "feishu_app_secret=\n"
-                                             "feishu_folder_token=\n"
                                              "obsidian_vault_dir=\n"
                                              "obsidian_folder=Clipboard\n"
-                                             "obsidian_filename_prefix=clipboard\n"
-                                             "local_git_repo_dir=\n"
-                                             "local_git_directory=clipboard\n"
-                                             "local_git_filename_prefix=clipboard\n"
-                                             "local_git_auto_commit=false\n"
                                              "notion_token=\n"
                                              "data_source_id=\n"
                                              "database_id=\n"
@@ -1095,6 +1571,157 @@ private:
             }
             ShowNotification(L"Notion Clipboard Win", L"创建配置页面失败，请查看日志。");
         }
+    }
+
+    void OpenRecentUploadResults()
+    {
+        const fs::path path = RecentUploadResultsPath(*config_);
+        if (!fs::exists(path))
+        {
+            try
+            {
+                AtomicWriteFile(path, "# Recent Upload Results\n\n还没有上传结果。上传成功或失败后会在这里记录 Notion URL 和 Obsidian 文件路径。\n");
+            }
+            catch (const std::exception &ex)
+            {
+                if (logger_ != nullptr)
+                {
+                    logger_->Warn("创建最近上传结果文件失败: " + std::string(ex.what()));
+                }
+            }
+        }
+        OpenPath(path);
+    }
+
+    bool TryOpenShellTarget(const std::wstring &target)
+    {
+        HINSTANCE result = ShellExecuteW(hwnd_, L"open", target.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        return reinterpret_cast<INT_PTR>(result) > 32;
+    }
+
+    void OpenLastObsidianUpload()
+    {
+        const fs::path state_path = LastObsidianUploadPath(*config_);
+        try
+        {
+            const std::optional<std::string> uri = ReadStateValue(state_path, "uri");
+            const std::optional<std::string> file = ReadStateValue(state_path, "file");
+            bool opened = false;
+            if (uri.has_value() && uri->rfind("obsidian://", 0) == 0)
+            {
+                opened = TryOpenShellTarget(Utf8ToWide(*uri));
+            }
+            if (!opened && file.has_value() && !file->empty())
+            {
+                const fs::path file_path = fs::path(Utf8ToWide(*file));
+                if (fs::exists(file_path))
+                {
+                    opened = TryOpenShellTarget(file_path.wstring());
+                }
+            }
+            if (!opened)
+            {
+                ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Obsidian 笔记，请查看最近上传结果。");
+                OpenRecentUploadResults();
+            }
+        }
+        catch (const std::exception &ex)
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Warn("打开最近 Obsidian 笔记失败: " + std::string(ex.what()));
+            }
+            ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Obsidian 笔记，请查看最近上传结果。");
+            OpenRecentUploadResults();
+        }
+    }
+
+    void OpenConfigDiagnostics()
+    {
+        const fs::path path = ConfigDiagnosticsPath(*config_);
+        if (!fs::exists(path))
+        {
+            try
+            {
+                AtomicWriteFile(path, "# Configuration Diagnostics\n\n还没有配置诊断结果。请先从托盘菜单选择“验证当前配置”。\n");
+            }
+            catch (const std::exception &ex)
+            {
+                if (logger_ != nullptr)
+                {
+                    logger_->Warn("创建配置诊断文件失败: " + std::string(ex.what()));
+                }
+            }
+        }
+        OpenPath(path);
+    }
+
+    void StartConfigDiagnostics()
+    {
+        if (diagnostics_running_.load())
+        {
+            ShowNotification(L"Notion Clipboard Win", L"配置验证正在进行。");
+            return;
+        }
+        if (diagnostics_thread_.joinable())
+        {
+            diagnostics_thread_.join();
+        }
+
+        diagnostics_running_.store(true);
+        const AppConfig config = *config_;
+        const fs::path diagnostics_path = ConfigDiagnosticsPath(config);
+        if (logger_ != nullptr)
+        {
+            logger_->Info("开始验证当前配置");
+        }
+        ShowNotification(L"Notion Clipboard Win", L"正在验证当前配置...");
+
+        diagnostics_thread_ = std::thread([this, config, diagnostics_path]
+                                          {
+                                              bool ok = false;
+                                              std::string error;
+                                              try
+                                              {
+                                                  ok = WriteConfigDiagnosticsReport(diagnostics_path, config, logger_);
+                                              }
+                                              catch (const std::exception &ex)
+                                              {
+                                                  error = ex.what();
+                                                  try
+                                                  {
+                                                      std::ostringstream report;
+                                                      report << "# Configuration Diagnostics\n\n"
+                                                             << "- Generated: " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
+                                                             << "- Status: FAILED\n"
+                                                             << "- Error: " << ReportLineValue(error) << "\n";
+                                                      AtomicWriteFile(diagnostics_path, report.str());
+                                                  }
+                                                  catch (...)
+                                                  {
+                                                  }
+                                              }
+                                              diagnostics_running_.store(false);
+
+                                              if (logger_ != nullptr)
+                                              {
+                                                  logger_->Info(std::string("配置验证完成: ") + (ok ? "OK" : "FAILED"));
+                                              }
+
+                                              auto notice = std::make_unique<UploadResultNotice>();
+                                              notice->title = L"Notion Clipboard Win";
+                                              notice->message = ok ? L"配置验证通过。报告已更新。" : L"配置验证发现问题。请查看配置诊断。";
+                                              if (!error.empty())
+                                              {
+                                                  notice->message += L"\n" + TruncateWide(Utf8ToWide(error), 120);
+                                              }
+                                              if (!cleaned_up_.load() && hwnd_ != nullptr &&
+                                                  PostMessageW(hwnd_, kUploadResultMessage, 0,
+                                                               reinterpret_cast<LPARAM>(notice.get())))
+                                              {
+                                                  notice.release();
+                                              }
+                                          });
     }
 
     void MaybeShowStartupConfigError()
@@ -1155,9 +1782,19 @@ private:
             return;
         }
 
-        UploadJob job = MakeUploadJob(*text, config_->upload_target);
+        const std::vector<std::string> targets = ParseUploadTargets(config_->upload_target);
+        if (targets.empty())
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Warn(std::string(trigger) + "上传被跳过，upload_target 为空");
+            }
+            return;
+        }
+
+        UploadJob first_job = MakeUploadJob(*text, targets.front());
         const std::uint64_t now_ms = NowUnixMs();
-        if (config_->duplicate_suppression_ms > 0 && job.hash == last_hash_ &&
+        if (config_->duplicate_suppression_ms > 0 && first_job.hash == last_hash_ &&
             now_ms - last_hash_at_ms_ <= static_cast<std::uint64_t>(config_->duplicate_suppression_ms))
         {
             if (logger_ != nullptr)
@@ -1171,29 +1808,48 @@ private:
             return;
         }
 
-        queue_->Enqueue(job);
-        last_hash_ = job.hash;
+        std::vector<std::string> job_ids;
+        job_ids.reserve(targets.size());
+        job_ids.push_back(first_job.id);
+        queue_->Enqueue(first_job);
+        for (std::size_t i = 1; i < targets.size(); ++i)
+        {
+            UploadJob job = MakeUploadJob(*text, targets[i]);
+            job_ids.push_back(job.id);
+            queue_->Enqueue(job);
+        }
+
+        last_hash_ = first_job.hash;
         last_hash_at_ms_ = now_ms;
         worker_->Notify();
         if (logger_ != nullptr)
         {
-            logger_->Info(std::string(trigger) + "已入队剪贴板内容: " + job.id +
+            logger_->Info(std::string(trigger) + "已入队剪贴板内容: targets=" + config_->upload_target +
+                          "，jobs=" + std::to_string(job_ids.size()) + "，first=" + job_ids.front() +
                           "，bytes=" + std::to_string(text->size()));
         }
         if (user_initiated)
         {
-            ShowNotification(L"Notion Clipboard Win", L"剪贴板内容已加入上传队列。");
+            ShowNotification(L"Notion Clipboard Win", L"剪贴板内容已加入上传队列：" + JoinTargetDisplayNames(targets) + L"。");
         }
     }
 
     void Cleanup()
     {
-        if (cleaned_up_)
+        bool expected = false;
+        if (!cleaned_up_.compare_exchange_strong(expected, true))
         {
             return;
         }
-        cleaned_up_ = true;
         StopHotkeyRecordingHook();
+        if (worker_ != nullptr)
+        {
+            worker_->SetResultCallback({});
+        }
+        if (diagnostics_thread_.joinable())
+        {
+            diagnostics_thread_.join();
+        }
 
         if (hwnd_ != nullptr)
         {
@@ -1249,7 +1905,9 @@ private:
     bool clipboard_listener_enabled_ = false;
     bool clipboard_listener_registered_ = false;
     bool tray_icon_added_ = false;
-    bool cleaned_up_ = false;
+    std::atomic<bool> cleaned_up_{false};
+    std::atomic<bool> diagnostics_running_{false};
+    std::thread diagnostics_thread_;
     bool recording_hotkey_ = false;
     bool restore_hotkey_enabled_after_recording_ = false;
     HHOOK keyboard_hook_ = nullptr;
@@ -1302,19 +1960,547 @@ int RunOnce(const AppConfig &config, PersistentQueue *queue, UploadTarget *targe
         return 0;
     }
 
+    const std::vector<std::string> targets = ParseUploadTargets(config.upload_target);
+    if (targets.empty())
+    {
+        throw std::runtime_error("upload_target 不能为空");
+    }
+
+    int result = 0;
+    for (const std::string &target_name : targets)
+    {
+        UploadJob target_job = MakeUploadJob(*text, target_name);
+        try
+        {
+            target->ProcessJob(&target_job, [] {});
+            logger->Info("上传成功: " + target_job.id + " [" + target_name + "]" +
+                         (target_job.remote_url.empty() ? "" : " -> " + target_job.remote_url));
+        }
+        catch (const UploadFailure &ex)
+        {
+            target_job.last_error = ex.what();
+            queue->Enqueue(target_job);
+            logger->Error("单次上传失败，任务已保存到队列: [" + target_name + "] " + std::string(ex.what()));
+            result = std::max(result, ex.retryable() ? 2 : 3);
+        }
+    }
+    return result;
+}
+
+int HexDigit(char ch)
+{
+    if (ch >= '0' && ch <= '9')
+    {
+        return ch - '0';
+    }
+    if (ch >= 'a' && ch <= 'f')
+    {
+        return ch - 'a' + 10;
+    }
+    if (ch >= 'A' && ch <= 'F')
+    {
+        return ch - 'A' + 10;
+    }
+    return -1;
+}
+
+std::string UrlDecode(const std::string &input)
+{
+    std::string output;
+    output.reserve(input.size());
+    for (std::size_t i = 0; i < input.size(); ++i)
+    {
+        if (input[i] == '%' && i + 2 < input.size())
+        {
+            const int high = HexDigit(input[i + 1]);
+            const int low = HexDigit(input[i + 2]);
+            if (high >= 0 && low >= 0)
+            {
+                output.push_back(static_cast<char>((high << 4) | low));
+                i += 2;
+                continue;
+            }
+        }
+        output.push_back(input[i] == '+' ? ' ' : input[i]);
+    }
+    return output;
+}
+
+std::optional<std::string> QueryValue(const std::string &url, const std::string &key)
+{
+    const std::size_t question = url.find('?');
+    if (question == std::string::npos)
+    {
+        return std::nullopt;
+    }
+
+    std::size_t begin = question + 1;
+    while (begin <= url.size())
+    {
+        const std::size_t end = url.find('&', begin);
+        const std::string part = url.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+        const std::size_t eq = part.find('=');
+        const std::string name = UrlDecode(part.substr(0, eq));
+        if (name == key)
+        {
+            return UrlDecode(eq == std::string::npos ? "" : part.substr(eq + 1));
+        }
+        if (end == std::string::npos)
+        {
+            break;
+        }
+        begin = end + 1;
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> IniValue(const std::string &content, const std::string &key)
+{
+    const std::string normalized_key = ToLowerAscii(Trim(key));
+    std::istringstream input(content);
+    std::string line;
+    while (std::getline(input, line))
+    {
+        line = Trim(line);
+        if (line.empty() || line[0] == '#' || line[0] == ';')
+        {
+            continue;
+        }
+        const std::size_t eq = line.find('=');
+        if (eq == std::string::npos)
+        {
+            continue;
+        }
+        if (ToLowerAscii(Trim(line.substr(0, eq))) == normalized_key)
+        {
+            return Trim(line.substr(eq + 1));
+        }
+    }
+    return std::nullopt;
+}
+
+void ValidateConfigContentForApply(const std::filesystem::path &config_path, const std::string &content)
+{
+    const std::optional<std::string> upload_target = IniValue(content, "upload_target");
+    if (!upload_target.has_value() || ParseUploadTargets(*upload_target).empty())
+    {
+        throw std::runtime_error("配置内容缺少有效的 upload_target");
+    }
+
+    std::filesystem::path temp_path = config_path;
+    temp_path += L".validate.";
+    temp_path += std::to_wstring(GetCurrentProcessId());
+    temp_path += L".ini";
+
+    std::error_code ignored;
     try
     {
-        target->ProcessJob(&job, [] {});
-        logger->Info("上传成功: " + job.id + (job.remote_url.empty() ? "" : " -> " + job.remote_url));
-        return 0;
+        AtomicWriteFile(temp_path, content);
+        const AppConfig candidate = LoadConfig(temp_path);
+        ValidateConfigOrThrow(candidate);
     }
-    catch (const UploadFailure &ex)
+    catch (...)
     {
-        job.last_error = ex.what();
-        queue->Enqueue(job);
-        logger->Error("单次上传失败，任务已保存到队列: " + std::string(ex.what()));
-        return ex.retryable() ? 2 : 3;
+        std::filesystem::remove(temp_path, ignored);
+        throw;
     }
+    std::filesystem::remove(temp_path, ignored);
+}
+
+std::wstring QuoteCommandArg(const std::wstring &arg)
+{
+    std::wstring output = L"\"";
+    for (wchar_t ch : arg)
+    {
+        if (ch == L'"')
+        {
+            output += L"\\\"";
+        }
+        else
+        {
+            output.push_back(ch);
+        }
+    }
+    output += L"\"";
+    return output;
+}
+
+void RegisterConfigProtocolHandler(Logger *logger)
+{
+    const std::filesystem::path exe_path = ModuleDirectory() / L"notion_clipboard_win.exe";
+    const std::wstring command = QuoteCommandArg(exe_path.wstring()) + L" \"%1\"";
+    HKEY key = nullptr;
+    LONG result = RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\notion-clipboard-win", 0, nullptr, 0,
+                                  KEY_SET_VALUE, nullptr, &key, nullptr);
+    if (result != ERROR_SUCCESS)
+    {
+        if (logger != nullptr)
+        {
+            logger->Warn("注册配置应用协议失败: " + LastErrorMessage(static_cast<DWORD>(result)));
+        }
+        return;
+    }
+
+    const wchar_t *display = L"URL:Notion Clipboard Win";
+    RegSetValueExW(key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE *>(display),
+                   static_cast<DWORD>((wcslen(display) + 1) * sizeof(wchar_t)));
+    const wchar_t *empty = L"";
+    RegSetValueExW(key, L"URL Protocol", 0, REG_SZ, reinterpret_cast<const BYTE *>(empty), sizeof(wchar_t));
+    RegCloseKey(key);
+
+    result = RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\notion-clipboard-win\\shell\\open\\command", 0,
+                             nullptr, 0, KEY_SET_VALUE, nullptr, &key, nullptr);
+    if (result != ERROR_SUCCESS)
+    {
+        if (logger != nullptr)
+        {
+            logger->Warn("注册配置应用协议命令失败: " + LastErrorMessage(static_cast<DWORD>(result)));
+        }
+        return;
+    }
+    RegSetValueExW(key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE *>(command.c_str()),
+                   static_cast<DWORD>((command.size() + 1) * sizeof(wchar_t)));
+    RegCloseKey(key);
+}
+
+std::filesystem::path ConfigPathFromProtocolUrl(const std::string &url, const char *action_name)
+{
+    const std::optional<std::string> path_value = QueryValue(url, "path");
+    if (!path_value.has_value())
+    {
+        throw std::runtime_error(std::string(action_name) + " URL 缺少 path");
+    }
+
+    const std::filesystem::path config_path = std::filesystem::absolute(std::filesystem::path(Utf8ToWide(*path_value)));
+    if (config_path.filename() != L"notion_clipboard_win.ini")
+    {
+        throw std::runtime_error("只允许访问 notion_clipboard_win.ini: " + WideToUtf8(config_path.wstring()));
+    }
+    return config_path;
+}
+
+void OpenPathWithShell(const std::filesystem::path &path, const char *action_name)
+{
+    HINSTANCE opened = ShellExecuteW(nullptr, L"open", path.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(opened) <= 32)
+    {
+        throw std::runtime_error(std::string(action_name) + "失败: " + LastErrorMessage());
+    }
+}
+
+void WriteFileIfMissing(const std::filesystem::path &path, const std::string &content)
+{
+    std::filesystem::create_directories(path.parent_path());
+    if (!std::filesystem::exists(path))
+    {
+        AtomicWriteFile(path, content);
+    }
+}
+
+int ApplyConfigUrlAndRestart(const std::string &url)
+{
+    std::optional<std::string> content_value = QueryValue(url, "content");
+    if (!content_value.has_value())
+    {
+        content_value = QueryValue(url, "icontent");
+    }
+    if (!content_value.has_value())
+    {
+        throw std::runtime_error("配置应用 URL 缺少 content");
+    }
+
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "配置应用");
+
+    try
+    {
+        ValidateConfigContentForApply(config_path, *content_value);
+    }
+    catch (const std::exception &ex)
+    {
+        throw std::runtime_error(std::string("配置内容未通过校验，未覆盖原配置: ") + ex.what());
+    }
+
+    AtomicWriteFile(config_path, *content_value);
+
+    HWND existing = FindWindowW(L"NotionClipboardWinTrayWindow", kAppDisplayName);
+    if (existing != nullptr)
+    {
+        SendMessageW(existing, WM_CLOSE, 0, 0);
+        Sleep(500);
+    }
+
+    const std::filesystem::path exe_path = ModuleDirectory() / L"notion_clipboard_win.exe";
+    const std::wstring args = L"--config " + QuoteCommandArg(config_path.wstring());
+    HINSTANCE launched = ShellExecuteW(nullptr, L"open", exe_path.c_str(), args.c_str(), nullptr, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(launched) <= 32)
+    {
+        throw std::runtime_error("重启程序失败: " + LastErrorMessage());
+    }
+    return 0;
+}
+
+int OpenConfigPageUrl(const std::string &url)
+{
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "配置页面");
+    const AppConfig config = LoadConfig(config_path);
+    const std::filesystem::path page_path = WriteConfigPage(config, config_path);
+    OpenPathWithShell(page_path, "打开配置页面");
+    return 0;
+}
+
+AppConfig LoadConfigFromProtocolUrlOrContent(const std::string &url, const std::filesystem::path &config_path,
+                                             std::filesystem::path *temp_path)
+{
+    std::optional<std::string> content_value = QueryValue(url, "content");
+    if (!content_value.has_value())
+    {
+        content_value = QueryValue(url, "icontent");
+    }
+    if (!content_value.has_value())
+    {
+        return LoadConfig(config_path);
+    }
+
+    std::filesystem::path candidate_path = config_path;
+    candidate_path += L".validate-url.";
+    candidate_path += std::to_wstring(GetCurrentProcessId());
+    candidate_path += L".ini";
+    AtomicWriteFile(candidate_path, *content_value);
+    if (temp_path != nullptr)
+    {
+        *temp_path = candidate_path;
+    }
+    return LoadConfig(candidate_path);
+}
+
+int ValidateConfigUrlAndOpenReport(const std::string &url)
+{
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "配置验证");
+    std::filesystem::path temp_path;
+    std::error_code ignored;
+
+    try
+    {
+        const AppConfig config = LoadConfigFromProtocolUrlOrContent(url, config_path, &temp_path);
+        std::filesystem::create_directories(config.state_dir);
+        Logger logger(config.state_dir / L"notion-clipboard-win.log", false);
+        const std::filesystem::path diagnostics_path = ConfigDiagnosticsPath(config);
+        WriteConfigDiagnosticsReport(diagnostics_path, config, &logger);
+        std::filesystem::remove(temp_path, ignored);
+        OpenPathWithShell(diagnostics_path, "打开配置诊断");
+    }
+    catch (const std::exception &ex)
+    {
+        AppConfig fallback_config = LoadConfig(config_path);
+        std::filesystem::create_directories(fallback_config.state_dir);
+        const std::filesystem::path diagnostics_path = ConfigDiagnosticsPath(fallback_config);
+        std::ostringstream report;
+        report << "# Configuration Diagnostics\n\n"
+               << "- Generated: " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
+               << "- Status: FAILED\n"
+               << "- Error: " << ReportLineValue(ex.what()) << "\n";
+        AtomicWriteFile(diagnostics_path, report.str());
+        std::filesystem::remove(temp_path, ignored);
+        OpenPathWithShell(diagnostics_path, "打开配置诊断");
+    }
+    return 0;
+}
+
+int OpenConfigDiagnosticsUrl(const std::string &url)
+{
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "配置诊断");
+    const AppConfig config = LoadConfig(config_path);
+    const std::filesystem::path diagnostics_path = ConfigDiagnosticsPath(config);
+    WriteFileIfMissing(diagnostics_path,
+                       "# Configuration Diagnostics\n\n还没有配置诊断结果。请先点击“验证当前配置”。\n");
+    OpenPathWithShell(diagnostics_path, "打开配置诊断");
+    return 0;
+}
+
+int OpenRecentUploadsUrl(const std::string &url)
+{
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "最近上传结果");
+    const AppConfig config = LoadConfig(config_path);
+    const std::filesystem::path recent_path = RecentUploadResultsPath(config);
+    WriteFileIfMissing(recent_path,
+                       "# Recent Upload Results\n\n还没有上传结果。上传成功或失败后会在这里记录 Notion URL 和 Obsidian 文件路径。\n");
+    OpenPathWithShell(recent_path, "打开最近上传结果");
+    return 0;
+}
+
+int RunMainSelfTest()
+{
+    bool ok = true;
+    auto fail = [&](const std::string &message)
+    {
+        std::cout << "[FAIL] main self-test: " << message << "\n";
+        ok = false;
+    };
+
+    class SuccessfulTarget : public UploadTarget
+    {
+    public:
+        std::string Name() const override
+        {
+            return "obsidian";
+        }
+
+        void Validate() override {}
+
+        void ProcessJob(UploadJob *job, const std::function<void()> &checkpoint) override
+        {
+            job->remote_id = "E:\\vault\\Inbox\\Worker Callback.md";
+            job->remote_url = "obsidian://open?vault=Test&file=Inbox%2FWorker%20Callback.md";
+            job->remote_progress = 1;
+            checkpoint();
+        }
+    };
+
+    const fs::path root =
+        fs::temp_directory_path() / (L"notion-clipboard-win-main-test-" + std::to_wstring(NowUnixMs()));
+    std::error_code ignored;
+    fs::remove_all(root, ignored);
+
+    try
+    {
+        PersistentQueue queue(root, 2);
+        SuccessfulTarget target;
+        UploadWorker worker(&queue, &target, nullptr);
+
+        std::mutex mutex;
+        std::condition_variable cv;
+        bool called = false;
+        bool success = false;
+        UploadJob callback_job;
+        std::string detail;
+
+        worker.SetResultCallback([&](const UploadJob &job, bool result, const std::string &message)
+                                 {
+                                     std::lock_guard<std::mutex> lock(mutex);
+                                     called = true;
+                                     success = result;
+                                     callback_job = job;
+                                     detail = message;
+                                     cv.notify_all();
+                                 });
+
+        UploadJob job = MakeUploadJob("Worker Callback\n\nBody", "obsidian");
+        queue.Enqueue(job);
+        worker.Start();
+
+        {
+            std::unique_lock<std::mutex> lock(mutex);
+            if (!cv.wait_for(lock, std::chrono::seconds(5), [&]
+                             { return called; }))
+            {
+                fail("upload worker did not emit result callback");
+            }
+        }
+        worker.Stop();
+
+        if (ok && (!success || callback_job.target != "obsidian" ||
+                   callback_job.remote_id != "E:\\vault\\Inbox\\Worker Callback.md" ||
+                   callback_job.remote_url.find("obsidian://open") != 0 || callback_job.remote_progress != 1 ||
+                   !detail.empty()))
+        {
+            fail("upload worker result callback fields mismatch");
+        }
+
+        const fs::path report_path = root / L"recent-upload-results.md";
+        WriteRecentUploadResultReport(report_path, callback_job, true, "");
+        UploadJob notion_job = callback_job;
+        notion_job.id = "notion-job";
+        notion_job.target = "notion";
+        notion_job.remote_id = "notion-page-id";
+        notion_job.remote_url = "https://www.notion.so/notion-page-id";
+        WriteRecentUploadResultReport(report_path, notion_job, true, "");
+        UploadJob failed_job = callback_job;
+        failed_job.id = "failed-job";
+        failed_job.target = "notion";
+        failed_job.remote_id.clear();
+        failed_job.remote_url.clear();
+        WriteRecentUploadResultReport(report_path, failed_job, false, "missing data_source_id");
+        const std::string report = ReadWholeFile(report_path);
+        if (report.find("# Recent Upload Results") != 0 ||
+            report.find("FAILED - notion") == std::string::npos ||
+            report.find("- Error: missing data_source_id") == std::string::npos ||
+            report.find("SUCCESS - notion") == std::string::npos ||
+            report.find("- Notion URL: <https://www.notion.so/notion-page-id>") == std::string::npos ||
+            report.find("- Notion Page ID: notion-page-id") == std::string::npos ||
+            report.find("SUCCESS - obsidian") == std::string::npos ||
+            report.find("- Obsidian File: E:\\vault\\Inbox\\Worker Callback.md") == std::string::npos ||
+            report.find("- Local File URI: <file:///E:/vault/Inbox/Worker%20Callback.md>") == std::string::npos ||
+            report.find("- Obsidian URI: <obsidian://open?vault=Test&file=Inbox%2FWorker%20Callback.md>") ==
+                std::string::npos ||
+            report.find("FAILED - notion") > report.find("SUCCESS - notion") ||
+            report.find("SUCCESS - notion") > report.find("SUCCESS - obsidian"))
+        {
+            fail("recent upload result report content mismatch");
+        }
+
+        const fs::path last_obsidian_path = root / L"last-obsidian-upload.ini";
+        WriteLastObsidianUploadState(last_obsidian_path, callback_job);
+        WriteLastObsidianUploadState(last_obsidian_path, notion_job);
+        const std::string last_obsidian = ReadWholeFile(last_obsidian_path);
+        const std::optional<std::string> last_file = ReadStateValue(last_obsidian_path, "file");
+        const std::optional<std::string> last_uri = ReadStateValue(last_obsidian_path, "uri");
+        const std::optional<std::string> last_title = ReadStateValue(last_obsidian_path, "title");
+        if (last_obsidian.find("updated=") == std::string::npos || !last_file.has_value() ||
+            *last_file != "E:\\vault\\Inbox\\Worker Callback.md" || !last_uri.has_value() ||
+            *last_uri != "obsidian://open?vault=Test&file=Inbox%2FWorker%20Callback.md" || !last_title.has_value() ||
+            *last_title != callback_job.title || last_obsidian.find("notion-page-id") != std::string::npos)
+        {
+            fail("last obsidian upload state content mismatch");
+        }
+
+        const fs::path protocol_config_path = root / L"notion_clipboard_win.ini";
+        const fs::path protocol_vault = root / L"protocol-vault";
+        fs::create_directories(protocol_vault);
+        std::filesystem::path protocol_temp_path;
+        const std::string protocol_url =
+            "notion-clipboard-win:/validate-config/?path=" + WideToUtf8(protocol_config_path.wstring()) +
+            "&content=upload_target%3Dobsidian%0Aobsidian_vault_dir%3D" + WideToUtf8(protocol_vault.wstring()) +
+            "%0Aobsidian_folder%3DInbox%0A";
+        const AppConfig protocol_config =
+            LoadConfigFromProtocolUrlOrContent(protocol_url, protocol_config_path, &protocol_temp_path);
+        if (protocol_config.upload_target != "obsidian" || protocol_config.obsidian_vault_dir != protocol_vault ||
+            protocol_config.obsidian_folder != "Inbox" || protocol_temp_path.empty() || !fs::exists(protocol_temp_path))
+        {
+            fail("validate-config protocol content was not loaded from temporary ini");
+        }
+        fs::remove(protocol_temp_path, ignored);
+
+        AppConfig diagnostic_config;
+        diagnostic_config.upload_target = "obsidian,notion";
+        diagnostic_config.state_dir = root / L"diag-state";
+        diagnostic_config.obsidian_vault_dir = root / L"diag-vault";
+        diagnostic_config.obsidian_folder = "Inbox";
+        fs::create_directories(diagnostic_config.obsidian_vault_dir);
+        const fs::path diagnostics_path = root / L"config-diagnostics.md";
+        const bool diagnostics_ok = WriteConfigDiagnosticsReport(diagnostics_path, diagnostic_config, nullptr);
+        const std::string diagnostics = ReadWholeFile(diagnostics_path);
+        if (diagnostics_ok || diagnostics.find("# Configuration Diagnostics") != 0 ||
+            diagnostics.find("## obsidian") == std::string::npos ||
+            diagnostics.find("- Status: OK") == std::string::npos ||
+            diagnostics.find("## notion") == std::string::npos ||
+            diagnostics.find("- Status: FAILED") == std::string::npos ||
+            diagnostics.find("缺少 Notion token") == std::string::npos ||
+            diagnostics.find("- Token: missing") == std::string::npos)
+        {
+            fail("configuration diagnostics report content mismatch");
+        }
+    }
+    catch (const std::exception &ex)
+    {
+        fail(ex.what());
+    }
+
+    fs::remove_all(root, ignored);
+    if (ok)
+    {
+        std::cout << "[PASS] upload worker result callback\n";
+    }
+    return ok ? 0 : 1;
 }
 
 int AppMain(int argc, wchar_t **argv)
@@ -1329,6 +2515,26 @@ int AppMain(int argc, wchar_t **argv)
     PeekMessageW(&bootstrap_msg, nullptr, WM_USER, WM_USER, PM_NOREMOVE);
 
     const CliOptions cli = ParseCli(argc, argv);
+    if (!cli.apply_config_url.empty())
+    {
+        return ApplyConfigUrlAndRestart(cli.apply_config_url);
+    }
+    if (!cli.open_config_page_url.empty())
+    {
+        return OpenConfigPageUrl(cli.open_config_page_url);
+    }
+    if (!cli.validate_config_url.empty())
+    {
+        return ValidateConfigUrlAndOpenReport(cli.validate_config_url);
+    }
+    if (!cli.open_config_diagnostics_url.empty())
+    {
+        return OpenConfigDiagnosticsUrl(cli.open_config_diagnostics_url);
+    }
+    if (!cli.open_recent_uploads_url.empty())
+    {
+        return OpenRecentUploadsUrl(cli.open_recent_uploads_url);
+    }
     if (cli.help)
     {
         PrintHelp();
@@ -1346,7 +2552,17 @@ int AppMain(int argc, wchar_t **argv)
         {
             return target_result;
         }
-        return RunConfigPageSelfTest();
+        const int obsidian_result = RunObsidianSelfTest();
+        if (obsidian_result != 0)
+        {
+            return obsidian_result;
+        }
+        const int config_page_result = RunConfigPageSelfTest();
+        if (config_page_result != 0)
+        {
+            return config_page_result;
+        }
+        return RunMainSelfTest();
     }
     if (!cli.dry_run_file_path.empty())
     {
@@ -1376,6 +2592,10 @@ int AppMain(int argc, wchar_t **argv)
 #endif
     Logger logger(config.state_dir / L"notion-clipboard-win.log", mirror_console);
     logger.Info("程序启动，config=" + WideToUtf8(cli.config_path.wstring()));
+    if (!cli.validate_config && !cli.once)
+    {
+        RegisterConfigProtocolHandler(&logger);
+    }
 
     if (cli.validate_config)
     {

@@ -4,32 +4,32 @@
 
 Notion Clipboard Win 是一个 Windows 原生剪贴板上传工具。它常驻系统托盘，通过热键或剪贴板监听读取内容，将 Markdown、代码块、LaTeX 公式、表格和常见 HTML 剪贴板片段转换后上传到配置的目标后端。
 
-项目默认面向 Notion 写入场景，同时也支持本地 Markdown 文件、Obsidian、本地 Git 仓库、Webhook、GitHub Gist、GitHub 仓库、语雀和飞书文档。程序使用 C++17、Win32 和 WinHTTP 实现，不依赖第三方运行时。
+项目当前聚焦 Notion 和 Obsidian 两条稳定写入路径。程序使用 C++17、Win32 和 WinHTTP 实现，不依赖第三方运行时。
 
 ## 主要能力
 
 - 系统托盘常驻，默认热键 `Ctrl+Shift+B` 上传当前剪贴板。
 - 可选自动监听剪贴板，支持 debounce 和短时间重复抑制。
-- 内置本地配置页面，可从托盘菜单打开，预填当前配置并输出完整 ini。
+- 内置本地配置页面，可从托盘菜单打开，预填当前配置、验证配置并输出完整 ini。
 - 上传前先写入持久队列，断网、退出或远端限流后可继续重试。
 - 记录 `remote_id`、`remote_url` 和 `remote_progress`，支持跨后端断点恢复。
 - 支持 Notion `Retry-After`、HTTP 短重试和持久队列指数退避。
 - 支持自定义热键、托盘通知、开机自启和状态目录。
+- 记录最近上传结果，可查看 Notion URL、Obsidian 文件路径、本地文件链接和 Obsidian URI。
+- 支持从托盘菜单打开最近一次 Obsidian 笔记。
+- 支持从托盘菜单或配置页面验证当前配置，并输出 Notion/Obsidian 诊断报告。
 - 转换器覆盖 Markdown、HTML、公式、表格、代码语言归一化和常见误识别保护。
 
 ## 上传目标
 
+`upload_target` 支持单目标，也支持逗号分隔的多目标，例如 `upload_target=notion,obsidian`。多目标上传时，每个目标会进入独立队列任务，便于单独重试和记录远端结果。
+
 | `upload_target` | 说明 | 必要配置 |
 | --- | --- | --- |
 | `notion` | 创建 Notion 数据源页面并追加正文 block | `notion_token`、`data_source_id` 或 `database_id` |
-| `markdown_file` | 写入本地 Markdown 文件 | 可选 `markdown_output_dir` |
-| `obsidian` | 写入 Obsidian vault | `obsidian_vault_dir` |
-| `local_git` | 写入本地 Git 工作区，可自动提交 | `local_git_repo_dir` |
-| `webhook` | 向自定义 HTTP endpoint 发送 JSON payload | `webhook_url` |
-| `github_gist` | 创建 Markdown Gist | `github_token` |
-| `github_repo` | 通过 GitHub Contents API 提交 Markdown 文件 | `github_token`、仓库 owner/name |
-| `yuque` | 在语雀知识库创建 Markdown 文档 | `yuque_token`、`yuque_namespace` |
-| `feishu_doc` | 创建飞书文档并写入文本块 | `feishu_app_id`、`feishu_app_secret` |
+| `obsidian` | 写入 Obsidian vault 中的 Markdown 笔记 | `obsidian_vault_dir` |
+
+Webhook、语雀和飞书文档会作为未来/实验平台继续打磨；当前配置页不把它们作为稳定入口。
 
 ## 支持的内容
 
@@ -56,7 +56,7 @@ notion_clipboard_win/
   src/                    C++17 Win32 源码
     main.cpp              托盘、CLI、剪贴板、上传线程
     converter.cpp         Markdown/HTML/LaTeX 转换与自测
-    upload_target.cpp     Notion、本地文件、GitHub、语雀、飞书等后端
+    upload_target.cpp     Notion、Obsidian 和实验上传后端
     config_page.cpp       本地 HTML 配置页面
   test/                   转换回归样例
 ```
@@ -65,7 +65,7 @@ notion_clipboard_win/
 
 ### 使用安装包
 
-从 GitHub Releases 下载 `NotionClipboardWin-0.1.0-Setup.exe`，安装后从开始菜单启动 `Notion Clipboard Win`。安装包不会创建或覆盖你的真实 `notion_clipboard_win.ini`，首次使用仍需要准备配置文件。
+从 GitHub Releases 下载 `NotionClipboardWin-0.2.0-Setup.exe`，安装后从开始菜单启动 `Notion Clipboard Win`。安装包不会创建或覆盖你的真实 `notion_clipboard_win.ini`，首次使用仍需要准备配置文件。
 
 ### 从源码运行
 
@@ -84,6 +84,17 @@ data_source_id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 hotkey=Ctrl+Shift+B
 ```
 
+同时写入 Notion 和 Obsidian：
+
+```ini
+upload_target=notion,obsidian
+notion_token=secret_xxx
+data_source_id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+obsidian_vault_dir=E:\obsidian\第一个库
+obsidian_folder=Inbox/Clipboard
+obsidian_tags=algorithm cpp
+```
+
 也可以通过环境变量保存敏感配置：
 
 ```powershell
@@ -98,7 +109,7 @@ setx NOTION_DATA_SOURCE_ID "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 .\build\Release\notion_clipboard_win.exe --config .\notion_clipboard_win.ini
 ```
 
-复制文本后按 `Ctrl+Shift+B` 上传，或右键托盘图标选择“上传当前剪贴板”。
+复制文本后按 `Ctrl+Shift+B` 上传，或右键托盘图标选择“上传当前剪贴板”。写入 Obsidian 成功后，可从托盘菜单选择“打开最近 Obsidian 笔记”直接定位新文件。
 
 ## Notion 准备
 
@@ -146,13 +157,13 @@ winget install JRSoftware.InnoSetup
 脚本会构建 console 版、运行 `--self-test`、构建 GUI Release 版，然后生成：
 
 ```text
-dist\NotionClipboardWin-0.1.0-Setup.exe
-dist\NotionClipboardWin-0.1.0-Setup.exe.sha256
+dist\NotionClipboardWin-0.2.0-Setup.exe
+dist\NotionClipboardWin-0.2.0-Setup.exe.sha256
 ```
 
 ## 配置
 
-推荐先从托盘菜单打开“配置页面”。页面会预填当前配置，支持显示/隐藏 token、复制完整 ini 和下载 ini。
+推荐先从托盘菜单打开“配置页面”。页面会预填当前配置，支持同时选择 Notion 和 Obsidian、自动列出 Obsidian vault 和子目录、显示写入位置预览、验证当前输出配置、查看诊断与最近上传结果、显示/隐藏 token、复制完整 ini、下载 ini，以及“应用并重启”写回当前配置文件。
 
 核心配置示例：
 
@@ -173,16 +184,11 @@ start_with_windows=false
 
 完整字段见 [config.example.ini](config.example.ini)。
 
-### 后端配置
+### 目标配置
 
-- `markdown_file`：`markdown_output_dir` 留空时写入 `%LOCALAPPDATA%\NotionClipboardWin\markdown`。
-- `obsidian`：设置 `obsidian_vault_dir` 和可选 `obsidian_folder`。
-- `local_git`：设置 `local_git_repo_dir`；`local_git_auto_commit=true` 时会执行 `git add` 和 `git commit`。
-- `webhook`：设置 `webhook_url`，可选 `webhook_bearer_token`。
-- `github_gist`：`github_token` 需要 Gist 写权限。
-- `github_repo`：`github_token` 需要目标仓库 Contents 写权限。
-- `yuque`：`yuque_namespace` 通常形如 `login/repo-slug`。
-- `feishu_doc`：使用 `feishu_app_id` / `feishu_app_secret` 获取 tenant token，`feishu_folder_token` 可留空。
+- `notion`：设置 `notion_token`，并优先填写 `data_source_id`。
+- `obsidian`：设置 `obsidian_vault_dir` 和可选 `obsidian_folder`；配置页可选择已有子目录，也可输入新目录，写入时会自动创建。可选 `obsidian_tags` 会写入 YAML frontmatter 的 `tags` 字段，多个标签用逗号、分号或空格分隔。文件名直接使用剪贴板标题，同名时自动追加编号。
+- Webhook、语雀和飞书文档：保留为未来/实验方向，暂不作为当前稳定配置路径。
 
 ## 托盘菜单
 
@@ -191,7 +197,7 @@ start_with_windows=false
 - 启用或关闭托盘通知。
 - 启用或关闭开机自动启动。
 - 临时启用或暂停剪贴板自动监听。
-- 打开配置页面、配置文件、日志和状态目录。
+- 验证当前配置，打开配置页面、配置文件、配置诊断、最近上传结果、最近 Obsidian 笔记、日志和状态目录。
 - 退出程序。
 
 ## 数据与可靠性
@@ -206,6 +212,9 @@ start_with_windows=false
 
 - `queue/`：等待上传或待重试任务。
 - `failed/`：超过重试次数或遇到永久错误的任务。
+- `config-diagnostics.md`：最近一次配置诊断，包含 Notion/Obsidian 的可用性和错误信息。
+- `recent-upload-results.md`：最近上传结果，包含 Notion URL、Notion page id、Obsidian 文件路径、本地文件 URI、Obsidian URI 或失败错误。
+- `last-obsidian-upload.ini`：最近一次 Obsidian 成功写入的位置，用于托盘菜单“打开最近 Obsidian 笔记”。
 - `notion-clipboard-win.log`：运行日志。
 
 Notion API 没有通用写入幂等键。本程序会在远端资源创建成功后立即记录 `remote_id` / `remote_url`，并在每批追加成功后记录 `remote_progress`。如果服务端已写入但客户端没有收到响应，极端情况下仍可能出现重复追加；较小批次、较长读取超时和持久进度记录可以降低风险。
@@ -237,7 +246,7 @@ Notion API 没有通用写入幂等键。本程序会在远端资源创建成功
 
 ## 发布流程
 
-发布 `v0.1.0` 时按以下顺序验证：
+发布 `v0.2.0` 时按以下顺序验证：
 
 ```powershell
 .\build-console\Release\notion_clipboard_win.exe --self-test
@@ -256,6 +265,6 @@ Notion API 没有通用写入幂等键。本程序会在远端资源创建成功
 
 ## 安全
 
-- 不要提交真实 `notion_token`、`github_token`、`yuque_token`、`feishu_app_secret`、webhook token 或本地 ini。
+- 不要提交真实 `notion_token` 或本地 ini。
 - `build/`、`build-console/`、运行日志、队列状态和本地状态目录不应进入仓库。
 - 开源发布前请确认示例文档和测试文件只包含假 token 或脱敏数据。

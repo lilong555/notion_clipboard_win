@@ -4,32 +4,32 @@ Language: [中文](README.md) | English
 
 Notion Clipboard Win is a native Windows clipboard uploader. It runs in the system tray, reads clipboard content through a hotkey or optional clipboard listener, converts Markdown, code blocks, LaTeX formulas, tables, and common HTML clipboard fragments, then uploads the result to the configured target.
 
-The default workflow targets Notion, but the same queue and conversion pipeline can also write local Markdown files, Obsidian vaults, local Git repositories, webhooks, GitHub Gists, GitHub repositories, Yuque, and Feishu Docs. The app is implemented with C++17, Win32, and WinHTTP, with no third-party runtime dependency.
+The project currently focuses on two stable write paths: Notion and Obsidian. The app is implemented with C++17, Win32, and WinHTTP, with no third-party runtime dependency.
 
 ## Features
 
 - Background tray process with `Ctrl+Shift+B` as the default upload hotkey.
 - Optional clipboard listener with debounce and short duplicate suppression.
-- Local configuration page from the tray menu, prefilled from the active config and able to emit a complete ini file.
+- Local configuration page from the tray menu, prefilled from the active config, able to validate settings and emit a complete ini file.
 - Persistent queue before upload, so network failures, process exits, and rate limits can be retried.
 - Stores `remote_id`, `remote_url`, and `remote_progress` for resumable uploads across targets.
 - Supports Notion `Retry-After`, short HTTP retries, and persistent queue exponential backoff.
 - Configurable hotkey, tray notifications, Windows startup, and state directory.
+- Records recent upload results with Notion URLs, Obsidian file paths, local file links, and Obsidian URIs.
+- Can open the latest successful Obsidian note from the tray menu.
+- Can validate the active configuration from the tray menu or configuration page and write a Notion/Obsidian diagnostics report.
 - Conversion coverage for Markdown, HTML, formulas, tables, code language normalization, and common false-positive protections.
 
 ## Upload Targets
 
+`upload_target` accepts a single target or a comma-separated list such as `upload_target=notion,obsidian`. In multi-target mode, each target is queued as an independent job so retries and remote progress stay isolated.
+
 | `upload_target` | Description | Required configuration |
 | --- | --- | --- |
 | `notion` | Create a Notion data source page and append body blocks | `notion_token`, `data_source_id` or `database_id` |
-| `markdown_file` | Write a local Markdown file | Optional `markdown_output_dir` |
-| `obsidian` | Write into an Obsidian vault | `obsidian_vault_dir` |
-| `local_git` | Write into a local Git worktree, optionally committing | `local_git_repo_dir` |
-| `webhook` | Send a JSON payload to a custom HTTP endpoint | `webhook_url` |
-| `github_gist` | Create a Markdown Gist | `github_token` |
-| `github_repo` | Commit a Markdown file through the GitHub Contents API | `github_token`, repository owner/name |
-| `yuque` | Create a Markdown document in a Yuque book | `yuque_token`, `yuque_namespace` |
-| `feishu_doc` | Create a Feishu document and append text blocks | `feishu_app_id`, `feishu_app_secret` |
+| `obsidian` | Write Markdown notes into an Obsidian vault | `obsidian_vault_dir` |
+
+Webhook, Yuque, and Feishu Docs remain future/experimental directions. They are not exposed as stable targets in the configuration page.
 
 ## Supported Content
 
@@ -56,7 +56,7 @@ notion_clipboard_win/
   src/                    C++17 Win32 source
     main.cpp              Tray, CLI, clipboard, upload worker
     converter.cpp         Markdown/HTML/LaTeX conversion and self-tests
-    upload_target.cpp     Notion, local files, GitHub, Yuque, Feishu, etc.
+    upload_target.cpp     Notion, Obsidian, and experimental upload targets
     config_page.cpp       Local HTML configuration page
   test/                   Conversion regression samples
 ```
@@ -65,7 +65,7 @@ notion_clipboard_win/
 
 ### Use The Installer
 
-Download `NotionClipboardWin-0.1.0-Setup.exe` from GitHub Releases, install it, and start `Notion Clipboard Win` from the Start menu. The installer does not create or overwrite your real `notion_clipboard_win.ini`; you still need to prepare a config file before first use.
+Download `NotionClipboardWin-0.2.0-Setup.exe` from GitHub Releases, install it, and start `Notion Clipboard Win` from the Start menu. The installer does not create or overwrite your real `notion_clipboard_win.ini`; you still need to prepare a config file before first use.
 
 ### Run From Source
 
@@ -84,6 +84,17 @@ data_source_id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 hotkey=Ctrl+Shift+B
 ```
 
+To write to Notion and Obsidian at the same time:
+
+```ini
+upload_target=notion,obsidian
+notion_token=secret_xxx
+data_source_id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+obsidian_vault_dir=E:\obsidian\MyVault
+obsidian_folder=Inbox/Clipboard
+obsidian_tags=algorithm cpp
+```
+
 You can keep secrets out of the config file by using environment variables:
 
 ```powershell
@@ -98,7 +109,7 @@ Build and start:
 .\build\Release\notion_clipboard_win.exe --config .\notion_clipboard_win.ini
 ```
 
-Copy text and press `Ctrl+Shift+B`, or right-click the tray icon and choose "Upload current clipboard".
+Copy text and press `Ctrl+Shift+B`, or right-click the tray icon and choose "Upload current clipboard". After a successful Obsidian write, use "Open latest Obsidian note" from the tray menu to jump to the new file.
 
 ## Notion Setup
 
@@ -146,13 +157,13 @@ winget install JRSoftware.InnoSetup
 The script builds the console binary, runs `--self-test`, builds the GUI Release binary, then produces:
 
 ```text
-dist\NotionClipboardWin-0.1.0-Setup.exe
-dist\NotionClipboardWin-0.1.0-Setup.exe.sha256
+dist\NotionClipboardWin-0.2.0-Setup.exe
+dist\NotionClipboardWin-0.2.0-Setup.exe.sha256
 ```
 
 ## Configuration
 
-The recommended path is to open "Configuration page" from the tray menu. The page is prefilled from the active config and can reveal/hide tokens, copy the full ini, or download an ini file.
+The recommended path is to open "Configuration page" from the tray menu. The page is prefilled from the active config, can select Notion and Obsidian at the same time, list registered Obsidian vaults and folders, preview the final Obsidian write location, validate the current output config, open diagnostics and recent upload results, reveal/hide tokens, copy or download the full ini, and apply changes by writing the active config file and restarting the tray app.
 
 Core options:
 
@@ -175,14 +186,9 @@ See [config.example.ini](config.example.ini) for the full template.
 
 ### Target Configuration
 
-- `markdown_file`: when `markdown_output_dir` is empty, files are written to `%LOCALAPPDATA%\NotionClipboardWin\markdown`.
-- `obsidian`: set `obsidian_vault_dir` and optional `obsidian_folder`.
-- `local_git`: set `local_git_repo_dir`; with `local_git_auto_commit=true`, the app runs `git add` and `git commit`.
-- `webhook`: set `webhook_url`, with optional `webhook_bearer_token`.
-- `github_gist`: `github_token` needs Gist write permission.
-- `github_repo`: `github_token` needs Contents write permission for the target repository.
-- `yuque`: `yuque_namespace` usually looks like `login/repo-slug`.
-- `feishu_doc`: uses `feishu_app_id` / `feishu_app_secret` to obtain a tenant token; `feishu_folder_token` is optional.
+- `notion`: set `notion_token` and prefer `data_source_id`.
+- `obsidian`: set `obsidian_vault_dir` and optional `obsidian_folder`; the configuration page can select an existing folder or accept a new folder, which is created when writing. Optional `obsidian_tags` are written to the YAML frontmatter `tags` field, separated by commas, semicolons, or whitespace. Filenames use the clipboard title directly, with a numeric suffix on conflicts.
+- Webhook, Yuque, and Feishu Docs: retained as future/experimental directions, not as the current stable configuration path.
 
 ## Tray Menu
 
@@ -191,7 +197,7 @@ See [config.example.ini](config.example.ini) for the full template.
 - Enable or disable tray notifications.
 - Enable or disable start with Windows.
 - Temporarily enable or pause automatic clipboard listening.
-- Open the configuration page, config file, log file, and state directory.
+- Validate the active configuration, and open the configuration page, config file, diagnostics report, recent upload results, latest Obsidian note, log file, and state directory.
 - Exit.
 
 ## Data And Reliability
@@ -206,6 +212,9 @@ Contents:
 
 - `queue/`: pending or retrying jobs.
 - `failed/`: jobs that exceeded retry limits or hit permanent errors.
+- `config-diagnostics.md`: the latest configuration diagnostics with Notion/Obsidian availability and errors.
+- `recent-upload-results.md`: recent upload results with Notion URLs, Notion page ids, Obsidian file paths, local file URIs, Obsidian URIs, or failure errors.
+- `last-obsidian-upload.ini`: the latest successful Obsidian write location, used by "Open latest Obsidian note" in the tray menu.
 - `notion-clipboard-win.log`: runtime log.
 
 The Notion API does not provide a general write idempotency key. The app records `remote_id` / `remote_url` immediately after creating a remote resource, and records `remote_progress` after each successful append batch. If the server writes a batch but the client loses the response, a duplicate append is still possible in an extreme case; smaller batches, longer read timeouts, and persisted progress reduce the risk.
@@ -237,7 +246,7 @@ Contribution expectations:
 
 ## Release Process
 
-For `v0.1.0`, verify in this order:
+For `v0.2.0`, verify in this order:
 
 ```powershell
 .\build-console\Release\notion_clipboard_win.exe --self-test
@@ -256,6 +265,6 @@ For commercial authorization, contact the copyright holder through the GitHub re
 
 ## Security
 
-- Do not commit real `notion_token`, `github_token`, `yuque_token`, `feishu_app_secret`, webhook tokens, or local ini files.
+- Do not commit real `notion_token` values or local ini files.
 - Keep `build/`, `build-console/`, logs, queue state, and local state directories out of the repository.
 - Before publishing public examples, verify that documentation and test files contain only fake or redacted secrets.

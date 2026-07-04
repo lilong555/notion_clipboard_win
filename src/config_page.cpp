@@ -1,18 +1,25 @@
 #include "config_page.h"
 
 #include "config.h"
+#include "obsidian.h"
 #include "util.h"
 #include "win_util.h"
 
+#include <algorithm>
 #include <iostream>
+#include <set>
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <utility>
+#include <vector>
 
 namespace ncw
 {
 namespace
 {
+constexpr const char *kCustomPickerValue = "__custom__";
+
 std::string HtmlEscape(const std::string &text)
 {
     std::string output;
@@ -46,11 +53,77 @@ std::string PathValue(const std::filesystem::path &path)
     return path.empty() ? "" : WideToUtf8(path.wstring());
 }
 
+std::string NormalizePathKey(const std::filesystem::path &input)
+{
+    if (input.empty())
+    {
+        return "";
+    }
+
+    std::error_code ec;
+    std::filesystem::path path = input.is_absolute() ? input : std::filesystem::absolute(input, ec);
+    if (ec)
+    {
+        path = input;
+        ec.clear();
+    }
+
+    std::filesystem::path normalized = std::filesystem::weakly_canonical(path, ec);
+    if (ec)
+    {
+        normalized = path.lexically_normal();
+    }
+
+    std::wstring wide = normalized.wstring();
+    std::replace(wide.begin(), wide.end(), L'/', L'\\');
+    while (wide.size() > 3 && (wide.back() == L'\\' || wide.back() == L'/'))
+    {
+        wide.pop_back();
+    }
+    return ToLowerAscii(WideToUtf8(wide));
+}
+
 void AddInput(std::ostringstream *html, const std::string &key, const std::string &label, const std::string &value,
               const std::string &note = "", const std::string &type = "text")
 {
     *html << "<label><span>" << HtmlEscape(label) << "</span><input data-key=\"" << HtmlEscape(key) << "\" type=\""
           << HtmlEscape(type) << "\" value=\"" << HtmlEscape(value) << "\">";
+    if (!note.empty())
+    {
+        *html << "<small>" << HtmlEscape(note) << "</small>";
+    }
+    *html << "</label>\n";
+}
+
+bool HasOptionValue(const std::vector<std::pair<std::string, std::string>> &options, const std::string &value)
+{
+    return std::any_of(options.begin(), options.end(), [&](const auto &option)
+                       {
+                           return option.first == value;
+                       });
+}
+
+void AddSelectWithCustomInput(std::ostringstream *html, const std::string &key, const std::string &label,
+                              const std::string &value,
+                              const std::vector<std::pair<std::string, std::string>> &options,
+                              const std::string &custom_label, const std::string &custom_placeholder,
+                              const std::string &note = "")
+{
+    const bool known_value = HasOptionValue(options, value);
+    *html << "<label><span>" << HtmlEscape(label) << "</span><select data-choice-target=\"" << HtmlEscape(key)
+          << "\">";
+    for (const auto &option : options)
+    {
+        *html << "<option value=\"" << HtmlEscape(option.first) << "\""
+              << (known_value && option.first == value ? " selected" : "") << ">" << HtmlEscape(option.second)
+              << "</option>";
+    }
+    *html << "<option value=\"" << kCustomPickerValue << "\"" << (known_value ? "" : " selected") << ">"
+          << HtmlEscape(custom_label) << "</option></select>";
+    *html << "<input data-key=\"" << HtmlEscape(key) << "\" type=\"hidden\" value=\"" << HtmlEscape(value) << "\">";
+    *html << "<input data-custom-key=\"" << HtmlEscape(key) << "\" type=\"text\" value=\""
+          << HtmlEscape(known_value ? "" : value) << "\" placeholder=\"" << HtmlEscape(custom_placeholder) << "\""
+          << (known_value ? " hidden" : "") << ">";
     if (!note.empty())
     {
         *html << "<small>" << HtmlEscape(note) << "</small>";
@@ -79,12 +152,250 @@ void AddSectionEnd(std::ostringstream *html)
 {
     *html << "</div></section>\n";
 }
+
+struct ObsidianFolderGroup
+{
+    std::string vault_key;
+    std::string vault_path;
+    std::string vault_label;
+    std::vector<std::pair<std::string, std::string>> folders;
+};
+
+std::string ObsidianVaultLabel(const std::filesystem::path &path, const std::string &name)
+{
+    const std::string path_text = PathValue(path);
+    return name.empty() ? path_text : (name + " - " + path_text);
+}
+
+std::string FindVaultNameForPath(const std::filesystem::path &path, const std::vector<ObsidianVault> &vaults)
+{
+    const std::string target_key = NormalizePathKey(path);
+    if (target_key.empty())
+    {
+        return "";
+    }
+    for (const ObsidianVault &vault : vaults)
+    {
+        if (NormalizePathKey(vault.path) == target_key)
+        {
+            return vault.name;
+        }
+    }
+    return "";
+}
+
+std::vector<std::pair<std::string, std::string>> BuildObsidianVaultOptions(
+    const std::filesystem::path &current_vault_dir, const std::vector<ObsidianVault> &vaults)
+{
+    std::vector<std::pair<std::string, std::string>> options;
+    std::set<std::string> seen;
+
+    auto add_option = [&](const std::filesystem::path &path, const std::string &name)
+    {
+        const std::string path_text = PathValue(path);
+        const std::string key = NormalizePathKey(path);
+        if (path_text.empty() || key.empty() || !seen.insert(key).second)
+        {
+            return;
+        }
+        options.emplace_back(path_text, ObsidianVaultLabel(path, name));
+    };
+
+    add_option(current_vault_dir, FindVaultNameForPath(current_vault_dir, vaults));
+    for (const ObsidianVault &vault : vaults)
+    {
+        add_option(vault.path, vault.name);
+    }
+    return options;
+}
+
+void AddVaultFolderOptions(const std::filesystem::path &vault_dir, std::set<std::string> *folders)
+{
+    constexpr std::size_t kMaxFolderOptions = 2000;
+    constexpr std::size_t kMaxFolderScanEntries = 20000;
+    if (vault_dir.empty())
+    {
+        return;
+    }
+    std::error_code ec;
+    if (!std::filesystem::exists(vault_dir, ec) || !std::filesystem::is_directory(vault_dir, ec))
+    {
+        return;
+    }
+
+    auto add_folder = [&](const std::filesystem::path &path)
+    {
+        const std::filesystem::path relative = path.lexically_relative(vault_dir);
+        if (relative.empty() || relative.is_absolute())
+        {
+            return;
+        }
+        bool safe = true;
+        for (const std::filesystem::path &part : relative)
+        {
+            if (part == L"..")
+            {
+                safe = false;
+                break;
+            }
+        }
+        if (safe)
+        {
+            folders->insert(WideToUtf8(relative.generic_wstring()));
+        }
+    };
+
+    std::size_t scanned_entries = 0;
+    std::filesystem::directory_iterator top_level(
+        vault_dir, std::filesystem::directory_options::skip_permission_denied, ec);
+    const std::filesystem::directory_iterator top_end;
+    while (!ec && top_level != top_end && folders->size() < kMaxFolderOptions &&
+           scanned_entries < kMaxFolderScanEntries)
+    {
+        ++scanned_entries;
+        const std::filesystem::path path = top_level->path();
+        const std::string name = ToLowerAscii(WideToUtf8(path.filename().wstring()));
+        if (name == ".obsidian" || name == ".git" || name == "node_modules" || name == ".trash")
+        {
+            top_level.increment(ec);
+            continue;
+        }
+        if (top_level->is_directory(ec))
+        {
+            add_folder(path);
+        }
+        ec.clear();
+        top_level.increment(ec);
+    }
+
+    ec.clear();
+    std::filesystem::recursive_directory_iterator it(
+        vault_dir, std::filesystem::directory_options::skip_permission_denied, ec);
+    const std::filesystem::recursive_directory_iterator end;
+    while (!ec && it != end && folders->size() < kMaxFolderOptions && scanned_entries < kMaxFolderScanEntries)
+    {
+        ++scanned_entries;
+        const std::filesystem::path path = it->path();
+        const std::string name = ToLowerAscii(WideToUtf8(path.filename().wstring()));
+        if (name == ".obsidian" || name == ".git" || name == "node_modules" || name == ".trash")
+        {
+            it.disable_recursion_pending();
+            it.increment(ec);
+            continue;
+        }
+        if (it->is_directory(ec))
+        {
+            add_folder(path);
+        }
+        ec.clear();
+        it.increment(ec);
+    }
+}
+
+std::vector<std::pair<std::string, std::string>> BuildObsidianFolderOptions(const std::filesystem::path &vault_dir)
+{
+    std::set<std::string> folders;
+    AddVaultFolderOptions(vault_dir, &folders);
+
+    std::vector<std::pair<std::string, std::string>> options;
+    options.reserve(folders.size());
+    for (const std::string &folder : folders)
+    {
+        options.emplace_back(folder, folder);
+    }
+    return options;
+}
+
+std::vector<ObsidianFolderGroup> BuildObsidianFolderGroups(const std::filesystem::path &current_vault_dir,
+                                                           const std::vector<ObsidianVault> &vaults)
+{
+    std::vector<ObsidianFolderGroup> groups;
+    std::set<std::string> seen;
+
+    auto add_group = [&](const std::filesystem::path &path, const std::string &name)
+    {
+        const std::string vault_key = NormalizePathKey(path);
+        const std::string vault_path = PathValue(path);
+        if (vault_key.empty() || vault_path.empty() || !seen.insert(vault_key).second)
+        {
+            return;
+        }
+        groups.push_back({vault_key, vault_path, ObsidianVaultLabel(path, name), BuildObsidianFolderOptions(path)});
+    };
+
+    add_group(current_vault_dir, FindVaultNameForPath(current_vault_dir, vaults));
+    for (const ObsidianVault &vault : vaults)
+    {
+        add_group(vault.path, vault.name);
+    }
+    return groups;
+}
+
+std::vector<std::pair<std::string, std::string>> CurrentObsidianFolderOptions(
+    const std::vector<ObsidianFolderGroup> &groups, const std::filesystem::path &current_vault_dir)
+{
+    const std::string current_key = NormalizePathKey(current_vault_dir);
+    for (const ObsidianFolderGroup &group : groups)
+    {
+        if (group.vault_key == current_key)
+        {
+            return group.folders;
+        }
+    }
+    return {};
+}
+
+std::vector<std::pair<std::string, std::string>> AddRootFolderOption(
+    const std::vector<std::pair<std::string, std::string>> &options)
+{
+    std::vector<std::pair<std::string, std::string>> output;
+    output.reserve(options.size() + 1);
+    output.emplace_back("", "Vault 根目录");
+    output.insert(output.end(), options.begin(), options.end());
+    return output;
+}
+
+std::string BuildObsidianFolderGroupsJson(const std::vector<ObsidianFolderGroup> &groups)
+{
+    std::ostringstream json;
+    json << "[";
+    bool first_group = true;
+    for (const ObsidianFolderGroup &group : groups)
+    {
+        if (!first_group)
+        {
+            json << ",";
+        }
+        first_group = false;
+        json << "{\"key\":\"" << EscapeJson(group.vault_key) << "\",\"path\":\"" << EscapeJson(group.vault_path)
+             << "\",\"label\":\"" << EscapeJson(group.vault_label) << "\",\"folders\":[";
+        bool first_folder = true;
+        for (const auto &folder : group.folders)
+        {
+            if (!first_folder)
+            {
+                json << ",";
+            }
+            first_folder = false;
+            json << "{\"value\":\"" << EscapeJson(folder.first) << "\",\"label\":\"" << EscapeJson(folder.second)
+                 << "\"}";
+        }
+        json << "]}";
+    }
+    json << "]";
+    return json.str();
+}
 }
 
 std::filesystem::path WriteConfigPage(const AppConfig &config, const std::filesystem::path &config_path)
 {
     const std::filesystem::path output_path = config.state_dir / L"notion-clipboard-config.html";
     std::filesystem::create_directories(output_path.parent_path());
+    const std::vector<ObsidianVault> obsidian_vaults = DiscoverObsidianVaults();
+    const std::vector<ObsidianFolderGroup> obsidian_folder_groups =
+        BuildObsidianFolderGroups(config.obsidian_vault_dir, obsidian_vaults);
+    const std::vector<std::pair<std::string, std::string>> current_obsidian_folder_options =
+        CurrentObsidianFolderOptions(obsidian_folder_groups, config.obsidian_vault_dir);
 
     std::ostringstream html;
     html << R"(<!doctype html>
@@ -94,25 +405,26 @@ std::filesystem::path WriteConfigPage(const AppConfig &config, const std::filesy
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Notion Clipboard Win 配置</title>
 <style>
-:root{color-scheme:light dark;--bg:#f6f7f9;--panel:#fff;--text:#172033;--muted:#667085;--line:#d9dee8;--accent:#1f6feb;--accent2:#0f766e}
-@media (prefers-color-scheme:dark){:root{--bg:#111827;--panel:#182233;--text:#edf2f7;--muted:#9aa8bd;--line:#324055;--accent:#5aa2ff;--accent2:#2dd4bf}}
+:root{color-scheme:light dark;--bg:#f6f7f9;--panel:#fff;--text:#172033;--muted:#667085;--line:#d9dee8;--accent:#1f6feb;--accent2:#0f766e;--danger:#b42318;--ok:#047857}
+@media (prefers-color-scheme:dark){:root{--bg:#111827;--panel:#182233;--text:#edf2f7;--muted:#9aa8bd;--line:#324055;--accent:#5aa2ff;--accent2:#2dd4bf;--danger:#f87171;--ok:#34d399}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
 header{position:sticky;top:0;z-index:2;background:color-mix(in srgb,var(--panel) 92%,transparent);border-bottom:1px solid var(--line);backdrop-filter:blur(8px)}
 .bar{max-width:1180px;margin:auto;padding:16px 20px;display:flex;gap:12px;align-items:center;justify-content:space-between}
 h1{font-size:20px;margin:0}.path{color:var(--muted);font-size:12px;word-break:break-all}.wrap{max-width:1180px;margin:0 auto;padding:20px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(360px,.9fr);gap:18px}
 section,.output{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}h2{font-size:15px;margin:0 0 4px}p{margin:0 0 12px;color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}label{display:grid;gap:5px}label span{font-weight:600}input,select,textarea{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:6px;padding:9px 10px;font:inherit}
-small{color:var(--muted)}.check{grid-template-columns:auto 1fr;align-items:start}.check input{width:auto;margin-top:3px}.check small{grid-column:2}
-.actions{display:flex;gap:8px;flex-wrap:wrap}button,.download{border:0;border-radius:6px;background:var(--accent);color:white;padding:9px 12px;font-weight:600;cursor:pointer;text-decoration:none}.secondary{background:var(--accent2)}
-textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-size:12px}.target{display:flex;gap:10px;align-items:center}.target select{max-width:280px}.hint{border-left:3px solid var(--accent);padding-left:10px;color:var(--muted)}
+small{color:var(--muted)}.check{grid-template-columns:auto 1fr;align-items:start}.check input{width:auto;margin-top:3px}.check small{grid-column:2}.wide{grid-column:1/-1}.preview{border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:6px;padding:9px 10px;background:var(--bg);color:var(--muted);word-break:break-all}.preview strong{color:var(--text)}
+.actions{display:flex;gap:8px;flex-wrap:wrap}button,.download{border:0;border-radius:6px;background:var(--accent);color:white;padding:9px 12px;font-weight:600;cursor:pointer;text-decoration:none}button:disabled{opacity:.5;cursor:not-allowed}.secondary{background:var(--accent2)}
+textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-size:12px}.target{display:flex;gap:10px;align-items:flex-start}.target-list{display:flex;gap:8px;flex-wrap:wrap;max-width:780px}.target-list label{display:flex;grid-template-columns:none;gap:5px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);font-size:12px}.target-list input{width:auto}.hint{border-left:3px solid var(--accent);padding-left:10px;color:var(--muted)}
+.status{margin:10px 0 12px;border:1px solid var(--line);border-left-width:3px;border-radius:6px;padding:9px 10px;color:var(--muted);background:var(--bg)}.status.ok{border-left-color:var(--ok);color:var(--ok)}.status.error{border-left-color:var(--danger);color:var(--danger)}
 @media (max-width:900px){.wrap{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.bar{align-items:flex-start;flex-direction:column}}
 </style>
 </head>
 <body>
 <header><div class="bar"><div><h1>Notion Clipboard Win 配置</h1><div class="path">配置文件：)"
-         << HtmlEscape(WideToUtf8(config_path.wstring())) << R"(</div></div><div class="target"><strong>上传后端</strong><select data-key="upload_target" id="target">
-<option value="notion">Notion</option><option value="markdown_file">Markdown 文件</option><option value="obsidian">Obsidian</option><option value="local_git">本地 Git</option><option value="webhook">Webhook</option><option value="github_gist">GitHub Gist</option><option value="github_repo">GitHub 仓库</option><option value="yuque">语雀</option><option value="feishu_doc">飞书文档</option>
-</select></div></div></header>
+         << HtmlEscape(WideToUtf8(config_path.wstring())) << R"(</div></div><div class="target"><strong>上传后端</strong><input data-key="upload_target" id="target" type="hidden"><div class="target-list" id="targetList">
+<label><input type="checkbox" value="notion" data-target-option="notion">Notion</label><label><input type="checkbox" value="obsidian" data-target-option="obsidian">Obsidian</label>
+</div></div></div></header>
 <main class="wrap"><div>
 )";
 
@@ -127,42 +439,19 @@ textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-si
              "", "number");
     AddSectionEnd(&html);
 
-    AddSectionStart(&html, "本地文件", "写入 Markdown 文件、Obsidian vault 或本地 Git 工作区。");
-    AddInput(&html, "markdown_output_dir", "Markdown 输出目录", PathValue(config.markdown_output_dir));
-    AddInput(&html, "obsidian_vault_dir", "Obsidian Vault", PathValue(config.obsidian_vault_dir));
-    AddInput(&html, "obsidian_folder", "Obsidian 子目录", config.obsidian_folder);
-    AddInput(&html, "obsidian_filename_prefix", "Obsidian 文件名前缀", config.obsidian_filename_prefix);
-    AddInput(&html, "local_git_repo_dir", "本地 Git 仓库目录", PathValue(config.local_git_repo_dir));
-    AddInput(&html, "local_git_directory", "Git 子目录", config.local_git_directory);
-    AddInput(&html, "local_git_filename_prefix", "Git 文件名前缀", config.local_git_filename_prefix);
-    AddCheckbox(&html, "local_git_auto_commit", "写入后自动 git add/commit", config.local_git_auto_commit,
-                "需要本机 git 可用，且仓库已配置 user.name/user.email。");
+    AddSectionStart(&html, "Obsidian", "写入指定 vault 的 Markdown 笔记。");
+    AddSelectWithCustomInput(&html, "obsidian_vault_dir", "Obsidian Vault", PathValue(config.obsidian_vault_dir),
+                             BuildObsidianVaultOptions(config.obsidian_vault_dir, obsidian_vaults),
+                             "手动填写路径...", "E:\\obsidian\\第一个库",
+                             "选择已注册 vault；没有列出时可手动填写路径。");
+    AddSelectWithCustomInput(&html, "obsidian_folder", "Obsidian 子目录", config.obsidian_folder,
+                             AddRootFolderOption(current_obsidian_folder_options),
+                             "新建/手动输入...", "Inbox/Clipboard", "选择已有目录；手动输入的新目录会自动创建。");
+    AddInput(&html, "obsidian_tags", "Obsidian 标签", config.obsidian_tags, "可选，逗号/空格分隔，例如 algorithm cpp");
+    html << "<div class=\"wide preview\" id=\"obsidianPreview\"></div>\n";
     AddSectionEnd(&html);
 
-    AddSectionStart(&html, "HTTP 与 GitHub", "Webhook、Gist 和 GitHub 仓库目标。");
-    AddInput(&html, "webhook_url", "Webhook URL", config.webhook_url);
-    AddInput(&html, "webhook_bearer_token", "Webhook Bearer Token", config.webhook_bearer_token, "", "password");
-    AddInput(&html, "github_token", "GitHub Token", config.github_token, "Gist 或 Contents 写权限。", "password");
-    AddCheckbox(&html, "github_gist_public", "GitHub Gist 公开", config.github_gist_public);
-    AddInput(&html, "github_gist_filename_prefix", "Gist 文件名前缀", config.github_gist_filename_prefix);
-    AddInput(&html, "github_repo_owner", "GitHub 仓库 owner", config.github_repo_owner);
-    AddInput(&html, "github_repo_name", "GitHub 仓库名", config.github_repo_name);
-    AddInput(&html, "github_repo_branch", "GitHub 分支", config.github_repo_branch, "留空使用默认分支。");
-    AddInput(&html, "github_repo_directory", "GitHub 仓库目录", config.github_repo_directory);
-    AddInput(&html, "github_repo_filename_prefix", "GitHub 文件名前缀", config.github_repo_filename_prefix);
-    AddSectionEnd(&html);
-
-    AddSectionStart(&html, "语雀", "通过语雀 Open API v2 创建 Markdown 文档。");
-    AddInput(&html, "yuque_token", "语雀 Token", config.yuque_token, "", "password");
-    AddInput(&html, "yuque_namespace", "语雀知识库 namespace", config.yuque_namespace, "通常形如 login/repo-slug。");
-    AddInput(&html, "yuque_slug_prefix", "语雀 slug 前缀", config.yuque_slug_prefix);
-    AddSectionEnd(&html);
-
-    AddSectionStart(&html, "飞书文档", "创建飞书文档，并写入 Markdown 文本块。");
-    AddInput(&html, "feishu_app_id", "飞书 App ID", config.feishu_app_id);
-    AddInput(&html, "feishu_app_secret", "飞书 App Secret", config.feishu_app_secret, "", "password");
-    AddInput(&html, "feishu_folder_token", "飞书 Folder Token", config.feishu_folder_token, "留空使用应用默认位置。");
-    AddSectionEnd(&html);
+    html << "<section><h2>未来支持</h2><p>Webhook、语雀和飞书文档暂不作为当前稳定上传后端，后续会在 Notion 与 Obsidian 体验稳定后继续打磨。</p></section>\n";
 
     AddSectionStart(&html, "应用行为", "热键、自动监听和重试参数。");
     AddInput(&html, "state_dir", "状态目录", PathValue(config.state_dir));
@@ -188,17 +477,59 @@ textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-si
     AddSectionEnd(&html);
 
     html << R"(
-</div><aside class="output"><h2>输出 ini</h2><p class="hint">页面会输出包含 token 的完整配置。不要把生成内容提交到仓库。</p><div class="actions"><button id="copy">复制配置</button><a id="download" class="download secondary" download="notion_clipboard_win.ini">下载 ini</a><button id="reveal" class="secondary">显示/隐藏 token</button></div><textarea id="ini" spellcheck="false"></textarea></aside></main>
+</div><aside class="output"><h2>输出 ini</h2><p class="hint">页面会输出包含 token 的完整配置。点击“应用并重启”会写入当前配置文件并重启托盘进程。</p><div id="status" class="status" role="status"></div><div class="actions"><button id="apply">应用并重启</button><button id="validateOutputConfig" class="secondary">验证输出配置</button><button id="openConfigDiagnostics" class="secondary">查看配置诊断</button><button id="openRecentUploads" class="secondary">查看最近上传结果</button><button id="refreshObs">重新扫描 Obsidian</button><button id="copy">复制配置</button><a id="download" class="download secondary" download="notion_clipboard_win.ini">下载 ini</a><button id="reveal" class="secondary">显示/隐藏 token</button></div><textarea id="ini" spellcheck="false"></textarea></aside></main>
 <script>
-const order=["upload_target","notion_token","data_source_id","database_id","title_property_name","content_property_name","content_property_max_chars","created_time_property_name","markdown_output_dir","obsidian_vault_dir","obsidian_folder","obsidian_filename_prefix","local_git_repo_dir","local_git_directory","local_git_filename_prefix","local_git_auto_commit","webhook_url","webhook_bearer_token","github_token","github_gist_public","github_gist_filename_prefix","github_repo_owner","github_repo_name","github_repo_branch","github_repo_directory","github_repo_filename_prefix","yuque_token","yuque_namespace","yuque_slug_prefix","feishu_app_id","feishu_app_secret","feishu_folder_token","state_dir","hotkey","enable_hotkey","enable_clipboard_listener","tray_notifications","start_with_windows","upload_initial_clipboard","debounce_ms","duplicate_suppression_ms","max_clipboard_bytes","min_request_interval_ms","append_batch_size","max_retry_attempts","http_retry_attempts"];
-const target=document.getElementById("target"); target.value=)"
-         << '"' << HtmlEscape(config.upload_target) << '"' << R"(;
+const order=["upload_target","notion_token","data_source_id","database_id","title_property_name","content_property_name","content_property_max_chars","created_time_property_name","obsidian_vault_dir","obsidian_folder","obsidian_tags","state_dir","hotkey","enable_hotkey","enable_clipboard_listener","tray_notifications","start_with_windows","upload_initial_clipboard","debounce_ms","duplicate_suppression_ms","max_clipboard_bytes","min_request_interval_ms","append_batch_size","max_retry_attempts","http_retry_attempts"];
+const configPath=)"
+         << '"' << EscapeJson(WideToUtf8(config_path.wstring())) << '"' << R"(;
+const obsidianFolderGroups=)"
+         << BuildObsidianFolderGroupsJson(obsidian_folder_groups) << R"(;
+function normalizePathKey(path){return (path||"").trim().replace(/\//g,"\\").replace(/[\\]+$/,"").toLowerCase();}
+const obsidianFolderGroupMap=new Map();
+obsidianFolderGroups.forEach(group=>{if(group.path)obsidianFolderGroupMap.set(group.path,group); if(group.key)obsidianFolderGroupMap.set(group.key,group); const normalized=normalizePathKey(group.path); if(normalized)obsidianFolderGroupMap.set(normalized,group);});
+function findObsidianFolderGroup(vault){return obsidianFolderGroupMap.get(vault)||obsidianFolderGroupMap.get(normalizePathKey(vault))||null;}
+const target=document.getElementById("target");
+const initialTargets=new Set()"
+         << '"' << HtmlEscape(config.upload_target) << '"' << R"(.split(/[\s,;|]+/).filter(Boolean));
+const targetChecks=[...document.querySelectorAll("[data-target-option]")];
+const statusBox=document.getElementById("status");
+const applyButton=document.getElementById("apply");
+function targetValue(el){return el.dataset.targetOption||el.value;}
+targetChecks.forEach(el=>el.checked=initialTargets.has(targetValue(el)));
+if(!targetChecks.some(el=>el.checked)&&targetChecks.length)targetChecks[0].checked=true;
 function val(key){const el=document.querySelector(`[data-key="${key}"]`); if(!el)return ""; return el.type==="checkbox"?(el.checked?"true":"false"):el.value.trim();}
-function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; document.getElementById("ini").value=text; document.getElementById("download").href=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"}));}
-document.querySelectorAll("[data-key]").forEach(el=>el.addEventListener("input",build));
+function selectedTargets(){return targetChecks.filter(el=>el.checked).map(targetValue);}
+function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个上传后端"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要 Data Source ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian Vault 不能为空"); return problems;}
+function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后将上传到："+selected.join("、")); applyButton.disabled=problems.length>0;}
+function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; document.getElementById("ini").value=text; document.getElementById("download").href=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); updateStatus(); updateObsidianPreview();}
+function protocolUrl(action){return "notion-clipboard-win:/"+action+"/?path="+encodeURIComponent(configPath);}
+function protocolUrlWithOutput(action){return protocolUrl(action)+"&content="+encodeURIComponent(document.getElementById("ini").value);}
+function syncTargets(){const selected=selectedTargets(); target.value=selected.join(","); build();}
+const CUSTOM_PICKER_VALUE="__custom__";
+const obsidianVaultInput=document.querySelector('[data-key="obsidian_vault_dir"]');
+const obsidianFolderInput=document.querySelector('[data-key="obsidian_folder"]');
+const obsidianFolderSelect=document.querySelector('[data-choice-target="obsidian_folder"]');
+const obsidianFolderCustom=document.querySelector('[data-custom-key="obsidian_folder"]');
+const obsidianPreview=document.getElementById("obsidianPreview");
+function appendSelectOption(parent,value,text){const option=document.createElement("option"); option.value=value; option.textContent=text; parent.appendChild(option); return option;}
+function selectHasValue(select,value){return [...select.options].some(option=>option.value===value);}
+function joinObsidianPath(vault,folder){vault=(vault||"").trim(); folder=(folder||"").trim().replace(/^[\\/]+/,"").replace(/[\\/]+$/,""); if(!vault)return ""; if(!folder)return vault; return vault.replace(/[\\/]+$/,"")+"\\"+folder.replace(/[\\/]+/g,"\\");}
+function updateObsidianPreview(){if(!obsidianPreview)return; const vault=(obsidianVaultInput?.value||"").trim(); const folder=(obsidianFolderInput?.value||"").trim(); const location=joinObsidianPath(vault,folder); const group=findObsidianFolderGroup(vault); const count=group?(group.folders||[]).length:0; const scanText=group?`已扫描 ${count} 个子目录`:"未匹配到已注册 vault，可继续手动填写路径"; obsidianPreview.textContent=location?`Obsidian 写入位置：${location}（${scanText}）`:"Obsidian 写入位置：尚未选择 vault";}
+function syncChoice(select){const key=select.dataset.choiceTarget; const hidden=document.querySelector(`[data-key="${key}"]`); const custom=document.querySelector(`[data-custom-key="${key}"]`); if(!hidden)return; if(select.value===CUSTOM_PICKER_VALUE){if(custom){custom.hidden=false; hidden.value=custom.value.trim();}}else{hidden.value=select.value; if(custom)custom.hidden=true;} if(key==="obsidian_vault_dir")refreshObsidianFolders(); build();}
+function refreshObsidianFolders(){if(!obsidianFolderSelect||!obsidianFolderInput)return; const vault=(obsidianVaultInput?.value||"").trim(); const group=findObsidianFolderGroup(vault); const folders=group?(group.folders||[]):[]; const current=obsidianFolderInput.value.trim(); obsidianFolderSelect.innerHTML=""; appendSelectOption(obsidianFolderSelect,"","Vault 根目录"); folders.forEach(folder=>appendSelectOption(obsidianFolderSelect,folder.value,folder.label)); appendSelectOption(obsidianFolderSelect,CUSTOM_PICKER_VALUE,folders.length?"新建/手动输入...":"手动输入/新建子目录..."); if(selectHasValue(obsidianFolderSelect,current)){obsidianFolderSelect.value=current; if(obsidianFolderCustom)obsidianFolderCustom.value="";}else{obsidianFolderSelect.value=CUSTOM_PICKER_VALUE; if(obsidianFolderCustom)obsidianFolderCustom.value=current;} syncChoice(obsidianFolderSelect);}
+targetChecks.forEach(el=>el.addEventListener("change",syncTargets));
+document.querySelectorAll("[data-key]").forEach(el=>{el.addEventListener("input",build);el.addEventListener("change",build);});
+document.querySelectorAll("[data-choice-target]").forEach(select=>select.addEventListener("change",()=>syncChoice(select)));
+document.querySelectorAll("[data-custom-key]").forEach(custom=>custom.addEventListener("input",()=>{const key=custom.dataset.customKey; const select=document.querySelector(`[data-choice-target="${key}"]`); const hidden=document.querySelector(`[data-key="${key}"]`); if(select&&select.value===CUSTOM_PICKER_VALUE&&hidden){hidden.value=custom.value.trim(); if(key==="obsidian_vault_dir")refreshObsidianFolders(); build();}}));
+applyButton.addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送配置给托盘应用，应用会校验、写入并重启。"; location.href="notion-clipboard-win:/apply-config/?path="+encodeURIComponent(configPath)+"&content="+encodeURIComponent(document.getElementById("ini").value);});
+document.getElementById("validateOutputConfig").addEventListener("click",()=>{build(); statusBox.className="status ok"; statusBox.textContent="已发送当前输出配置验证请求，报告会自动打开。"; location.href=protocolUrlWithOutput("validate-config");});
+document.getElementById("openConfigDiagnostics").addEventListener("click",()=>{location.href=protocolUrl("open-config-diagnostics");});
+document.getElementById("openRecentUploads").addEventListener("click",()=>{location.href=protocolUrl("open-recent-uploads");});
+document.getElementById("refreshObs").addEventListener("click",()=>{location.href=protocolUrl("open-config-page"); setTimeout(()=>location.reload(),1200);});
 document.getElementById("copy").addEventListener("click",async()=>{build(); await navigator.clipboard.writeText(document.getElementById("ini").value);});
 document.getElementById("reveal").addEventListener("click",()=>document.querySelectorAll('input[type="password"],input[data-was-password]').forEach(el=>{if(el.type==="password"){el.dataset.wasPassword="1";el.type="text"}else{el.type="password"}}));
-build();
+document.querySelectorAll("[data-choice-target]").forEach(syncChoice);
+syncTargets();
 </script>
 </body></html>
 )";
@@ -226,14 +557,36 @@ int RunConfigPageSelfTest()
     {
         AppConfig config;
         config.state_dir = root / L"state";
-        config.upload_target = "yuque";
+        config.upload_target = "notion,obsidian";
         config.notion_token = "notion_secret";
-        config.github_token = "github_secret";
-        config.yuque_token = "yuque_secret";
-        config.feishu_app_secret = "feishu_secret";
         config.obsidian_vault_dir = root / L"vault";
-        config.local_git_repo_dir = root / L"repo";
-        config.yuque_namespace = "team/book";
+        config.obsidian_tags = "algorithm cpp";
+        std::filesystem::create_directories(config.obsidian_vault_dir / L"aaa");
+        std::filesystem::create_directories(config.obsidian_vault_dir / L"Clipboard");
+        const std::filesystem::path second_vault_dir = root / L"vault2";
+        std::filesystem::create_directories(second_vault_dir / L"secondOnly");
+
+        ObsidianVault second_vault;
+        second_vault.id = "second";
+        second_vault.name = "Second Vault";
+        second_vault.path = second_vault_dir;
+        const std::vector<ObsidianVault> fake_vaults{second_vault};
+        const std::vector<ObsidianFolderGroup> folder_groups =
+            BuildObsidianFolderGroups(config.obsidian_vault_dir, fake_vaults);
+        auto has_folder = [](const ObsidianFolderGroup &group, const std::string &folder)
+        {
+            return std::any_of(group.folders.begin(), group.folders.end(),
+                               [&](const auto &entry)
+                               {
+                                   return entry.first == folder;
+                               });
+        };
+        if (folder_groups.size() != 2 || !has_folder(folder_groups[0], "aaa") ||
+            has_folder(folder_groups[0], "secondOnly") || !has_folder(folder_groups[1], "secondOnly") ||
+            has_folder(folder_groups[1], "aaa"))
+        {
+            fail("obsidian folder options were not scoped by vault");
+        }
 
         const std::filesystem::path page = WriteConfigPage(config, root / L"notion_clipboard_win.ini");
         if (!std::filesystem::exists(page))
@@ -243,14 +596,42 @@ int RunConfigPageSelfTest()
         else
         {
             const std::string html = ReadWholeFile(page);
-            for (const char *needle : {"notion_secret", "github_secret", "yuque_secret", "option value=\"obsidian\"",
-                                       "option value=\"local_git\"", "option value=\"yuque\"",
-                                       "option value=\"feishu_doc\"", "yuque_namespace", "feishu_secret",
-                                       "local_git_auto_commit"})
+            for (const char *needle : {"notion_secret", "value=\"obsidian\" data-target-option=\"obsidian\"",
+                                       "value=\"notion\" data-target-option=\"notion\"", "未来支持", "Webhook、语雀和飞书文档",
+                                       "notion,obsidian",
+                                       "data-choice-target=\"obsidian_vault_dir\"",
+                                       "data-choice-target=\"obsidian_folder\"", "data-custom-key=\"obsidian_vault_dir\"",
+                                       "data-custom-key=\"obsidian_folder\"", "新建/手动输入...", "value=\"aaa\"",
+                                       "data-key=\"obsidian_tags\"", "Obsidian 标签", "algorithm cpp",
+                                       "const obsidianFolderGroups=", "\"key\":", "obsidianFolderGroupMap",
+                                       "normalizePathKey(path)", "findObsidianFolderGroup(vault)",
+                                       "CUSTOM_PICKER_VALUE", "id=\"obsidianPreview\"", "Obsidian 写入位置：",
+                                       "joinObsidianPath(vault,folder)", "updateObsidianPreview()",
+                                       "refreshObsidianFolders()", "重新扫描 Obsidian",
+                                       "protocolUrl(\"open-config-page\")", "targetValue(el)", "syncTargets()",
+                                       "id=\"validateOutputConfig\"", "验证输出配置",
+                                       "protocolUrlWithOutput(\"validate-config\")",
+                                       "已发送当前输出配置验证请求",
+                                       "id=\"openConfigDiagnostics\"", "查看配置诊断",
+                                       "id=\"openRecentUploads\"", "查看最近上传结果",
+                                       "protocolUrl(\"open-config-diagnostics\")",
+                                       "protocolUrl(\"open-recent-uploads\")",
+                                       "id=\"status\"", "validateConfig()", "applyButton.disabled",
+                                       "配置完整。保存后将上传到：", "需要处理：",
+                                       "notion-clipboard-win:/apply-config/", "应用并重启"})
             {
                 if (html.find(needle) == std::string::npos)
                 {
                     fail(std::string("missing expected config page content: ") + needle);
+                }
+            }
+            for (const char *needle : {"data-target-option=\"yuque\"", "data-target-option=\"feishu_doc\"",
+                                       "data-target-option=\"webhook\"", "yuque_namespace", "feishu_app_secret",
+                                       "webhook_url", "markdown_output_dir"})
+            {
+                if (html.find(needle) != std::string::npos)
+                {
+                    fail(std::string("found future-only config page content: ") + needle);
                 }
             }
         }

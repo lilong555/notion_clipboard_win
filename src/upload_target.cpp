@@ -5,6 +5,7 @@
 #include "http_client.h"
 #include "json.h"
 #include "logger.h"
+#include "obsidian.h"
 #include "queue.h"
 #include "util.h"
 #include "win_util.h"
@@ -12,7 +13,6 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
-#include <cstdlib>
 #include <filesystem>
 #include <functional>
 #include <iostream>
@@ -47,14 +47,106 @@ void EnsureJobTarget(UploadJob *job, const std::string &target)
     }
 }
 
-std::string BuildMarkdownDocument(const UploadJob &job)
+std::vector<std::string> ParseObsidianTags(const std::string &value)
+{
+    std::vector<std::string> tags;
+    std::string token;
+    auto flush = [&]
+    {
+        token = Trim(token);
+        while (!token.empty() && token.front() == '#')
+        {
+            token.erase(token.begin());
+            token = Trim(token);
+        }
+        std::replace(token.begin(), token.end(), '\\', '/');
+        while (!token.empty() && token.front() == '/')
+        {
+            token.erase(token.begin());
+        }
+        while (!token.empty() && token.back() == '/')
+        {
+            token.pop_back();
+        }
+        if (!token.empty() && std::find(tags.begin(), tags.end(), token) == tags.end())
+        {
+            tags.push_back(token);
+        }
+        token.clear();
+    };
+
+    for (unsigned char ch : value)
+    {
+        if (ch == ',' || ch == ';' || std::isspace(ch))
+        {
+            flush();
+        }
+        else
+        {
+            token.push_back(static_cast<char>(ch));
+        }
+    }
+    flush();
+    return tags;
+}
+
+std::string YamlDoubleQuotedString(const std::string &value)
+{
+    std::string output = "\"";
+    for (unsigned char ch : value)
+    {
+        if (ch == '\\' || ch == '"')
+        {
+            output.push_back('\\');
+            output.push_back(static_cast<char>(ch));
+        }
+        else if (ch == '\r' || ch == '\n' || ch == '\t')
+        {
+            output.push_back(' ');
+        }
+        else
+        {
+            output.push_back(static_cast<char>(ch));
+        }
+    }
+    output.push_back('"');
+    return output;
+}
+
+std::string BuildObsidianFrontMatter(const std::vector<std::string> &tags)
+{
+    if (tags.empty())
+    {
+        return "";
+    }
+
+    std::ostringstream content;
+    content << "---\n"
+            << "tags:\n";
+    for (const std::string &tag : tags)
+    {
+        content << "  - " << YamlDoubleQuotedString(tag) << "\n";
+    }
+    content << "---\n\n";
+    return content.str();
+}
+
+std::string BuildMarkdownDocument(const UploadJob &job, bool normalize_for_obsidian = false,
+                                  bool include_source_comment = true,
+                                  const std::vector<std::string> &obsidian_tags = {})
 {
     std::ostringstream content;
+    content << BuildObsidianFrontMatter(obsidian_tags);
     content << "# " << job.title << "\n\n";
-    content << "<!-- source: notion_clipboard_win; job_id: " << job.id << "; created_at: "
-            << IsoUtcTimestampFromUnixMs(job.created_at_ms) << " -->\n\n";
-    content << NormalizeLineEndings(job.content);
-    if (job.content.empty() || job.content.back() != '\n')
+    if (include_source_comment)
+    {
+        content << "<!-- source: notion_clipboard_win; job_id: " << job.id << "; created_at: "
+                << IsoUtcTimestampFromUnixMs(job.created_at_ms) << " -->\n\n";
+    }
+    const std::string body =
+        normalize_for_obsidian ? NormalizeMarkdownForObsidian(job.content) : NormalizeLineEndings(job.content);
+    content << body;
+    if (body.empty() || body.back() != '\n')
     {
         content << "\n";
     }
@@ -756,43 +848,31 @@ fs::path SafeRelativePathFromUtf8(const std::string &relative)
     return output;
 }
 
-fs::path BuildLocalMarkdownPath(const fs::path &root, const std::string &folder, const std::string &prefix,
-                                const UploadJob &job)
+fs::path MakeUniqueMarkdownPath(const fs::path &path)
 {
-    const std::string safe_prefix = SanitizePortableFileStem(prefix);
+    if (!fs::exists(path))
+    {
+        return path;
+    }
+
+    const fs::path parent = path.parent_path();
+    const std::wstring stem = path.stem().wstring();
+    const fs::path extension = path.extension();
+    for (int suffix = 2; suffix < 1000; ++suffix)
+    {
+        fs::path candidate = parent / (stem + L" " + std::to_wstring(suffix) + extension.wstring());
+        if (!fs::exists(candidate))
+        {
+            return candidate;
+        }
+    }
+    return parent / (stem + L" " + std::to_wstring(NowUnixMs()) + extension.wstring());
+}
+
+fs::path BuildObsidianMarkdownPath(const fs::path &root, const std::string &folder, const UploadJob &job)
+{
     const std::wstring title = SanitizeMarkdownFileStem(Utf8ToWide(job.title));
-    const std::wstring filename =
-        Utf8ToWide(safe_prefix + "-" + std::to_string(job.created_at_ms) + "-" + job.hash.substr(0, 12)) + L"-" +
-        title + L".md";
-    return root / SafeRelativePathFromUtf8(folder) / filename;
-}
-
-std::wstring QuoteWindowsArg(const std::wstring &arg)
-{
-    std::wstring quoted = L"\"";
-    for (wchar_t ch : arg)
-    {
-        if (ch == L'"')
-        {
-            quoted += L"\\\"";
-        }
-        else
-        {
-            quoted.push_back(ch);
-        }
-    }
-    quoted += L"\"";
-    return quoted;
-}
-
-std::string RunSystemCommand(const std::wstring &command, const std::string &description)
-{
-    const int exit_code = _wsystem(command.c_str());
-    if (exit_code != 0)
-    {
-        throw UploadFailure(description + " 失败，exit_code=" + std::to_string(exit_code), true, 0);
-    }
-    return std::to_string(exit_code);
+    return MakeUniqueMarkdownPath(root / SafeRelativePathFromUtf8(folder) / (title + L".md"));
 }
 
 class ObsidianTarget : public UploadTarget
@@ -818,18 +898,19 @@ public:
             return;
         }
 
-        const fs::path output_path =
-            BuildLocalMarkdownPath(config_.obsidian_vault_dir, config_.obsidian_folder, config_.obsidian_filename_prefix,
-                                   *job);
+        const fs::path output_path = BuildObsidianMarkdownPath(config_.obsidian_vault_dir, config_.obsidian_folder, *job);
         fs::create_directories(output_path.parent_path());
-        AtomicWriteFile(output_path, BuildMarkdownDocument(*job));
-        job->remote_id = WideToUtf8(output_path.wstring());
-        job->remote_url = job->remote_id;
+        AtomicWriteFile(output_path, BuildMarkdownDocument(*job, true, false, ParseObsidianTags(config_.obsidian_tags)));
+        const std::string output_path_utf8 = WideToUtf8(output_path.wstring());
+        const std::string open_uri = BuildObsidianOpenUri(config_.obsidian_vault_dir, output_path);
+        job->remote_id = output_path_utf8;
+        job->remote_url = open_uri.empty() ? output_path_utf8 : open_uri;
         job->remote_progress = 1;
         checkpoint();
         if (logger_ != nullptr)
         {
-            logger_->Info("Obsidian 写入成功: " + job->remote_url);
+            logger_->Info("Obsidian 写入成功: " + output_path_utf8 +
+                          (open_uri.empty() ? "" : (" -> " + open_uri)));
         }
     }
 
@@ -837,103 +918,6 @@ private:
     AppConfig config_;
     Logger *logger_ = nullptr;
 };
-
-class LocalGitTarget : public UploadTarget
-{
-public:
-    LocalGitTarget(AppConfig config, Logger *logger) : config_(std::move(config)), logger_(logger) {}
-
-    std::string Name() const override
-    {
-        return "local_git";
-    }
-
-    void Validate() override
-    {
-        ValidateConfigOrThrow(config_);
-    }
-
-    void ProcessJob(UploadJob *job, const std::function<void()> &checkpoint) override
-    {
-        EnsureJobTarget(job, Name());
-        if (job->remote_progress > 0 && !job->remote_url.empty())
-        {
-            return;
-        }
-
-        const fs::path output_path = BuildLocalMarkdownPath(config_.local_git_repo_dir, config_.local_git_directory,
-                                                            config_.local_git_filename_prefix, *job);
-        fs::create_directories(output_path.parent_path());
-        AtomicWriteFile(output_path, BuildMarkdownDocument(*job));
-
-        if (config_.local_git_auto_commit)
-        {
-            CommitFile(output_path, *job);
-        }
-
-        job->remote_id = WideToUtf8(output_path.lexically_relative(config_.local_git_repo_dir).wstring());
-        job->remote_url = WideToUtf8(output_path.wstring());
-        job->remote_progress = 1;
-        checkpoint();
-        if (logger_ != nullptr)
-        {
-            logger_->Info("本地 Git 写入成功: " + job->remote_url);
-        }
-    }
-
-private:
-    void CommitFile(const fs::path &output_path, const UploadJob &job)
-    {
-        const fs::path relative = output_path.lexically_relative(config_.local_git_repo_dir);
-        const std::wstring repo = std::filesystem::absolute(config_.local_git_repo_dir).wstring();
-        const std::wstring rel = relative.wstring();
-        RunSystemCommand(L"git -C " + QuoteWindowsArg(repo) + L" add -- " + QuoteWindowsArg(rel), "git add");
-        RunSystemCommand(L"git -C " + QuoteWindowsArg(repo) + L" commit -m " +
-                             QuoteWindowsArg(Utf8ToWide("Add clipboard note: " + job.title)) + L" -- " +
-                             QuoteWindowsArg(rel),
-                         "git commit");
-    }
-
-    AppConfig config_;
-    Logger *logger_ = nullptr;
-};
-
-std::string Base64Encode(const std::string &input)
-{
-    static constexpr char kAlphabet[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    std::string output;
-    output.reserve(((input.size() + 2) / 3) * 4);
-    std::size_t i = 0;
-    while (i + 3 <= input.size())
-    {
-        const unsigned int a = static_cast<unsigned char>(input[i++]);
-        const unsigned int b = static_cast<unsigned char>(input[i++]);
-        const unsigned int c = static_cast<unsigned char>(input[i++]);
-        output.push_back(kAlphabet[(a >> 2) & 0x3f]);
-        output.push_back(kAlphabet[((a & 0x03) << 4) | ((b >> 4) & 0x0f)]);
-        output.push_back(kAlphabet[((b & 0x0f) << 2) | ((c >> 6) & 0x03)]);
-        output.push_back(kAlphabet[c & 0x3f]);
-    }
-    const std::size_t remaining = input.size() - i;
-    if (remaining == 1)
-    {
-        const unsigned int a = static_cast<unsigned char>(input[i]);
-        output.push_back(kAlphabet[(a >> 2) & 0x3f]);
-        output.push_back(kAlphabet[(a & 0x03) << 4]);
-        output.push_back('=');
-        output.push_back('=');
-    }
-    else if (remaining == 2)
-    {
-        const unsigned int a = static_cast<unsigned char>(input[i]);
-        const unsigned int b = static_cast<unsigned char>(input[i + 1]);
-        output.push_back(kAlphabet[(a >> 2) & 0x3f]);
-        output.push_back(kAlphabet[((a & 0x03) << 4) | ((b >> 4) & 0x0f)]);
-        output.push_back(kAlphabet[(b & 0x0f) << 2]);
-        output.push_back('=');
-    }
-    return output;
-}
 
 std::string PercentEncodePathSegment(const std::string &segment)
 {
@@ -951,116 +935,6 @@ std::string PercentEncodePathSegment(const std::string &segment)
         output.push_back(kHex[ch & 0x0f]);
     }
     return output;
-}
-
-std::string NormalizeGitHubRepoDirectory(const std::string &directory)
-{
-    std::string normalized = directory;
-    std::replace(normalized.begin(), normalized.end(), '\\', '/');
-    std::vector<std::string> segments;
-    std::size_t begin = 0;
-    while (begin <= normalized.size())
-    {
-        const std::size_t slash = normalized.find('/', begin);
-        const std::string raw_segment =
-            Trim(normalized.substr(begin, slash == std::string::npos ? std::string::npos : slash - begin));
-        if (!raw_segment.empty() && raw_segment != "." && raw_segment != "..")
-        {
-            segments.push_back(SanitizePortableFileStem(raw_segment));
-        }
-        if (slash == std::string::npos)
-        {
-            break;
-        }
-        begin = slash + 1;
-    }
-
-    std::string output;
-    for (const std::string &segment : segments)
-    {
-        if (!output.empty())
-        {
-            output += "/";
-        }
-        output += segment;
-    }
-    return output;
-}
-
-std::string JoinGitHubRepoPath(const std::string &directory, const std::string &filename)
-{
-    const std::string normalized_directory = NormalizeGitHubRepoDirectory(directory);
-    if (normalized_directory.empty())
-    {
-        return filename;
-    }
-    return normalized_directory + "/" + filename;
-}
-
-std::string EncodeGitHubContentPath(const std::string &path)
-{
-    std::string output;
-    std::size_t begin = 0;
-    while (begin <= path.size())
-    {
-        const std::size_t slash = path.find('/', begin);
-        const std::string segment = path.substr(begin, slash == std::string::npos ? std::string::npos : slash - begin);
-        if (!output.empty())
-        {
-            output += "/";
-        }
-        output += PercentEncodePathSegment(segment);
-        if (slash == std::string::npos)
-        {
-            break;
-        }
-        begin = slash + 1;
-    }
-    return output;
-}
-
-std::string BuildGitHubGistPayload(const UploadJob &job, const AppConfig &config)
-{
-    const std::string stem = SanitizePortableFileStem(config.github_gist_filename_prefix);
-    const std::string filename = stem + "-" + job.hash.substr(0, 12) + ".md";
-
-    std::ostringstream body;
-    body << "{"
-         << "\"description\":\"" << EscapeJson(job.title) << "\","
-         << "\"public\":" << (config.github_gist_public ? "true" : "false") << ","
-         << "\"files\":{\"" << EscapeJson(filename) << "\":{\"content\":\""
-         << EscapeJson(BuildMarkdownDocument(job)) << "\"}}"
-         << "}";
-    return body.str();
-}
-
-std::string BuildGitHubRepoFilePath(const UploadJob &job, const AppConfig &config)
-{
-    const std::string stem = SanitizePortableFileStem(config.github_repo_filename_prefix);
-    const std::string filename = stem + "-" + std::to_string(job.created_at_ms) + "-" + job.hash.substr(0, 12) + ".md";
-    return JoinGitHubRepoPath(config.github_repo_directory, filename);
-}
-
-std::string BuildGitHubRepoApiUrl(const UploadJob &job, const AppConfig &config)
-{
-    return "https://api.github.com/repos/" + PercentEncodePathSegment(config.github_repo_owner) + "/" +
-           PercentEncodePathSegment(config.github_repo_name) + "/contents/" +
-           EncodeGitHubContentPath(BuildGitHubRepoFilePath(job, config));
-}
-
-std::string BuildGitHubRepoPayload(const UploadJob &job, const AppConfig &config)
-{
-    const std::string title = Trim(job.title).empty() ? "clipboard note" : job.title;
-    std::ostringstream body;
-    body << "{"
-         << "\"message\":\"" << EscapeJson("Add clipboard note: " + title) << "\","
-         << "\"content\":\"" << Base64Encode(BuildMarkdownDocument(job)) << "\"";
-    if (!Trim(config.github_repo_branch).empty())
-    {
-        body << ",\"branch\":\"" << EscapeJson(Trim(config.github_repo_branch)) << "\"";
-    }
-    body << "}";
-    return body.str();
 }
 
 std::string EncodeSlashSeparatedPath(const std::string &path)
@@ -1174,138 +1048,6 @@ std::string BuildFeishuChildrenPayload(const UploadJob &job)
     body << "]}";
     return body.str();
 }
-
-class GitHubGistTarget : public UploadTarget
-{
-public:
-    GitHubGistTarget(AppConfig config, Logger *logger) : config_(std::move(config)), logger_(logger) {}
-
-    std::string Name() const override
-    {
-        return "github_gist";
-    }
-
-    void Validate() override
-    {
-        ValidateConfigOrThrow(config_);
-    }
-
-    void ProcessJob(UploadJob *job, const std::function<void()> &checkpoint) override
-    {
-        EnsureJobTarget(job, Name());
-        if (job->remote_progress > 0 && !job->remote_url.empty())
-        {
-            return;
-        }
-
-        const HttpResponse response = CreateGistWithRetry(BuildGitHubGistPayload(*job, config_));
-        const auto ids = ExtractGistResponseIds(response.body);
-        if (ids.first.empty())
-        {
-            throw UploadFailure("GitHub Gist 创建响应缺少 id", true, 0);
-        }
-        job->remote_id = ids.first;
-        job->remote_url = ids.second.empty() ? ("https://gist.github.com/" + ids.first) : ids.second;
-        job->remote_progress = 1;
-        checkpoint();
-        if (logger_ != nullptr)
-        {
-            logger_->Info("GitHub Gist 上传成功: " + job->id + " -> " + job->remote_url);
-        }
-    }
-
-private:
-    HttpResponse CreateGistWithRetry(const std::string &body)
-    {
-        std::string last_error;
-        int retry_after = 0;
-        for (int attempt = 0; attempt <= config_.http_retry_attempts; ++attempt)
-        {
-            try
-            {
-                Throttle();
-                std::wstring headers;
-                headers += L"Authorization: Bearer ";
-                headers += Utf8ToWide(config_.github_token);
-                headers += L"\r\nAccept: application/vnd.github+json\r\n";
-                headers += L"X-GitHub-Api-Version: 2026-03-10\r\n";
-                headers += L"User-Agent: notion-clipboard-win\r\n";
-
-                const HttpResponse response =
-                    http_.RequestJsonUrl(L"POST", "https://api.github.com/gists", headers, body, "GitHub Gist");
-                retry_after = response.retry_after_seconds;
-                if (response.status_code >= 200 && response.status_code < 300)
-                {
-                    return response;
-                }
-
-                const bool retryable = IsRetryableHttpStatus(response.status_code);
-                last_error = "HTTP " + std::to_string(response.status_code) + ": " + SummarizeForLog(response.body);
-                if (!retryable)
-                {
-                    throw UploadFailure(last_error, false, retry_after);
-                }
-            }
-            catch (const UploadFailure &)
-            {
-                throw;
-            }
-            catch (const std::exception &ex)
-            {
-                last_error = ex.what();
-            }
-
-            if (attempt < config_.http_retry_attempts)
-            {
-                const int delay_ms = ComputeHttpRetryDelayMs(retry_after, attempt);
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            }
-        }
-        throw UploadFailure(last_error.empty() ? "GitHub Gist 请求失败" : last_error, true, retry_after);
-    }
-
-    static std::pair<std::string, std::string> ExtractGistResponseIds(const std::string &body)
-    {
-        try
-        {
-            const JsonValue json = ParseJson(body);
-            if (!json.is_object())
-            {
-                return {};
-            }
-            const JsonValue *id = json.find("id");
-            const JsonValue *url = json.find("html_url");
-            return {(id != nullptr && id->is_string()) ? id->as_string() : "",
-                    (url != nullptr && url->is_string()) ? url->as_string() : ""};
-        }
-        catch (...)
-        {
-            return {};
-        }
-    }
-
-    void Throttle()
-    {
-        if (config_.min_request_interval_ms <= 0)
-        {
-            return;
-        }
-        std::lock_guard<std::mutex> lock(throttle_mutex_);
-        const auto now = std::chrono::steady_clock::now();
-        const auto next_allowed = last_request_at_ + std::chrono::milliseconds(config_.min_request_interval_ms);
-        if (next_allowed > now)
-        {
-            std::this_thread::sleep_until(next_allowed);
-        }
-        last_request_at_ = std::chrono::steady_clock::now();
-    }
-
-    AppConfig config_;
-    Logger *logger_ = nullptr;
-    WinHttpClient http_;
-    std::mutex throttle_mutex_;
-    std::chrono::steady_clock::time_point last_request_at_;
-};
 
 class FeishuDocTarget : public UploadTarget
 {
@@ -1604,149 +1346,128 @@ private:
     std::chrono::steady_clock::time_point last_request_at_;
 };
 
-class GitHubRepoTarget : public UploadTarget
+std::string JoinTargetNames(const std::vector<std::string> &targets)
+{
+    std::ostringstream output;
+    for (std::size_t i = 0; i < targets.size(); ++i)
+    {
+        if (i > 0)
+        {
+            output << ",";
+        }
+        output << targets[i];
+    }
+    return output.str();
+}
+
+std::unique_ptr<UploadTarget> CreateSingleUploadTarget(AppConfig config, Logger *logger)
+{
+    if (config.upload_target == "notion")
+    {
+        return std::make_unique<NotionClient>(config, logger);
+    }
+    if (config.upload_target == "markdown_file")
+    {
+        return std::make_unique<MarkdownFileTarget>(config, logger);
+    }
+    if (config.upload_target == "obsidian")
+    {
+        return std::make_unique<ObsidianTarget>(config, logger);
+    }
+    if (config.upload_target == "webhook")
+    {
+        return std::make_unique<WebhookTarget>(config, logger);
+    }
+    if (config.upload_target == "yuque")
+    {
+        return std::make_unique<YuqueTarget>(config, logger);
+    }
+    if (config.upload_target == "feishu_doc")
+    {
+        return std::make_unique<FeishuDocTarget>(config, logger);
+    }
+    throw std::runtime_error("未知 upload_target: " + config.upload_target);
+}
+
+class MultiUploadTarget : public UploadTarget
 {
 public:
-    GitHubRepoTarget(AppConfig config, Logger *logger) : config_(std::move(config)), logger_(logger) {}
+    MultiUploadTarget(const AppConfig &config, Logger *logger, std::vector<std::string> targets)
+        : target_names_(std::move(targets)), name_(JoinTargetNames(target_names_))
+    {
+        for (const std::string &target : target_names_)
+        {
+            AppConfig target_config = config;
+            target_config.upload_target = target;
+            targets_.push_back(CreateSingleUploadTarget(target_config, logger));
+        }
+    }
 
     std::string Name() const override
     {
-        return "github_repo";
+        return name_;
     }
 
     void Validate() override
     {
-        ValidateConfigOrThrow(config_);
+        for (std::unique_ptr<UploadTarget> &target : targets_)
+        {
+            target->Validate();
+        }
     }
 
     void ProcessJob(UploadJob *job, const std::function<void()> &checkpoint) override
     {
-        EnsureJobTarget(job, Name());
-        if (job->remote_progress > 0 && !job->remote_url.empty())
+        if (job->target.empty() || job->target == name_)
         {
+            ProcessCompositeJob(job, checkpoint);
             return;
         }
 
-        const HttpResponse response =
-            PutFileWithRetry(BuildGitHubRepoApiUrl(*job, config_), BuildGitHubRepoPayload(*job, config_));
-        const auto ids = ExtractGitHubRepoResponseIds(response.body);
-        if (ids.first.empty())
+        for (std::size_t i = 0; i < target_names_.size(); ++i)
         {
-            throw UploadFailure("GitHub 仓库文件创建响应缺少 sha", true, 0);
+            if (job->target == target_names_[i])
+            {
+                targets_[i]->ProcessJob(job, checkpoint);
+                return;
+            }
         }
-        job->remote_id = ids.first;
-        job->remote_url = ids.second.empty() ? ("https://github.com/" + config_.github_repo_owner + "/" +
-                                                config_.github_repo_name)
-                                             : ids.second;
-        job->remote_progress = 1;
-        checkpoint();
-        if (logger_ != nullptr)
-        {
-            logger_->Info("GitHub 仓库上传成功: " + job->id + " -> " + job->remote_url);
-        }
+        throw UploadFailure("任务目标是 " + job->target + "，当前多后端不包含该目标: " + name_, false, 0);
     }
 
 private:
-    HttpResponse PutFileWithRetry(const std::string &url, const std::string &body)
+    void ProcessCompositeJob(UploadJob *job, const std::function<void()> &checkpoint)
     {
-        std::string last_error;
-        int retry_after = 0;
-        for (int attempt = 0; attempt <= config_.http_retry_attempts; ++attempt)
+        std::vector<std::string> urls;
+        for (std::size_t i = 0; i < target_names_.size(); ++i)
         {
+            UploadJob child = *job;
+            child.target = target_names_[i];
+            child.remote_id.clear();
+            child.remote_url.clear();
+            child.remote_progress = 0;
             try
             {
-                Throttle();
-                std::wstring headers;
-                headers += L"Authorization: Bearer ";
-                headers += Utf8ToWide(config_.github_token);
-                headers += L"\r\nAccept: application/vnd.github+json\r\n";
-                headers += L"X-GitHub-Api-Version: 2026-03-10\r\n";
-                headers += L"User-Agent: notion-clipboard-win\r\n";
-
-                const HttpResponse response = http_.RequestJsonUrl(L"PUT", url, headers, body, "GitHub Repo");
-                retry_after = response.retry_after_seconds;
-                if (response.status_code >= 200 && response.status_code < 300)
-                {
-                    return response;
-                }
-
-                const bool retryable = IsRetryableHttpStatus(response.status_code);
-                last_error = "HTTP " + std::to_string(response.status_code) + ": " + SummarizeForLog(response.body);
-                if (!retryable)
-                {
-                    throw UploadFailure(last_error, false, retry_after);
-                }
+                targets_[i]->ProcessJob(&child, [] {});
             }
-            catch (const UploadFailure &)
+            catch (const UploadFailure &ex)
             {
-                throw;
+                throw UploadFailure(target_names_[i] + ": " + std::string(ex.what()), ex.retryable(),
+                                    ex.retry_after_seconds());
             }
-            catch (const std::exception &ex)
-            {
-                last_error = ex.what();
-            }
-
-            if (attempt < config_.http_retry_attempts)
-            {
-                const int delay_ms = ComputeHttpRetryDelayMs(retry_after, attempt);
-                std::this_thread::sleep_for(std::chrono::milliseconds(delay_ms));
-            }
+            urls.push_back(target_names_[i] + "=" + child.remote_url);
         }
-        throw UploadFailure(last_error.empty() ? "GitHub 仓库请求失败" : last_error, true, retry_after);
+
+        job->target = name_;
+        job->remote_id = name_;
+        job->remote_url = JoinTargetNames(urls);
+        job->remote_progress = target_names_.size();
+        checkpoint();
     }
 
-    static std::pair<std::string, std::string> ExtractGitHubRepoResponseIds(const std::string &body)
-    {
-        try
-        {
-            const JsonValue json = ParseJson(body);
-            if (!json.is_object())
-            {
-                return {};
-            }
-            const JsonValue *content = json.find("content");
-            const JsonValue *commit = json.find("commit");
-            const JsonValue *content_sha = content == nullptr ? nullptr : content->find("sha");
-            const JsonValue *commit_sha = commit == nullptr ? nullptr : commit->find("sha");
-            const JsonValue *content_url = content == nullptr ? nullptr : content->find("html_url");
-            const JsonValue *commit_url = commit == nullptr ? nullptr : commit->find("html_url");
-            const std::string id = (commit_sha != nullptr && commit_sha->is_string())
-                                       ? commit_sha->as_string()
-                                       : ((content_sha != nullptr && content_sha->is_string()) ? content_sha->as_string()
-                                                                                               : "");
-            const std::string url = (content_url != nullptr && content_url->is_string())
-                                        ? content_url->as_string()
-                                        : ((commit_url != nullptr && commit_url->is_string()) ? commit_url->as_string()
-                                                                                              : "");
-            return {id, url};
-        }
-        catch (...)
-        {
-            return {};
-        }
-    }
-
-    void Throttle()
-    {
-        if (config_.min_request_interval_ms <= 0)
-        {
-            return;
-        }
-        std::lock_guard<std::mutex> lock(throttle_mutex_);
-        const auto now = std::chrono::steady_clock::now();
-        const auto next_allowed = last_request_at_ + std::chrono::milliseconds(config_.min_request_interval_ms);
-        if (next_allowed > now)
-        {
-            std::this_thread::sleep_until(next_allowed);
-        }
-        last_request_at_ = std::chrono::steady_clock::now();
-    }
-
-    AppConfig config_;
-    Logger *logger_ = nullptr;
-    WinHttpClient http_;
-    std::mutex throttle_mutex_;
-    std::chrono::steady_clock::time_point last_request_at_;
+    std::vector<std::string> target_names_;
+    std::vector<std::unique_ptr<UploadTarget>> targets_;
+    std::string name_;
 };
 
 UploadJob MakeTestUploadJob(const std::string &content, const std::string &target)
@@ -1765,43 +1486,18 @@ UploadJob MakeTestUploadJob(const std::string &content, const std::string &targe
 
 std::unique_ptr<UploadTarget> CreateUploadTarget(const AppConfig &config, Logger *logger)
 {
-    if (config.upload_target == "notion")
+    const std::vector<std::string> targets = ParseUploadTargets(config.upload_target);
+    if (targets.empty())
     {
-        return std::make_unique<NotionClient>(config, logger);
+        throw std::runtime_error("upload_target 不能为空");
     }
-    if (config.upload_target == "markdown_file")
+    if (targets.size() == 1)
     {
-        return std::make_unique<MarkdownFileTarget>(config, logger);
+        AppConfig target_config = config;
+        target_config.upload_target = targets.front();
+        return CreateSingleUploadTarget(target_config, logger);
     }
-    if (config.upload_target == "obsidian")
-    {
-        return std::make_unique<ObsidianTarget>(config, logger);
-    }
-    if (config.upload_target == "local_git")
-    {
-        return std::make_unique<LocalGitTarget>(config, logger);
-    }
-    if (config.upload_target == "webhook")
-    {
-        return std::make_unique<WebhookTarget>(config, logger);
-    }
-    if (config.upload_target == "github_gist")
-    {
-        return std::make_unique<GitHubGistTarget>(config, logger);
-    }
-    if (config.upload_target == "github_repo")
-    {
-        return std::make_unique<GitHubRepoTarget>(config, logger);
-    }
-    if (config.upload_target == "yuque")
-    {
-        return std::make_unique<YuqueTarget>(config, logger);
-    }
-    if (config.upload_target == "feishu_doc")
-    {
-        return std::make_unique<FeishuDocTarget>(config, logger);
-    }
-    throw std::runtime_error("未知 upload_target: " + config.upload_target);
+    return std::make_unique<MultiUploadTarget>(config, logger, targets);
 }
 
 int RunUploadTargetSelfTest()
@@ -1941,156 +1637,76 @@ int RunUploadTargetSelfTest()
         obsidian_config.upload_target = "obsidian";
         obsidian_config.obsidian_vault_dir = root / L"obsidian-vault";
         obsidian_config.obsidian_folder = "Inbox/Clipboard";
-        obsidian_config.obsidian_filename_prefix = "clip";
+        obsidian_config.obsidian_tags = "#算法 cpp;daily/note cpp";
         fs::create_directories(obsidian_config.obsidian_vault_dir);
         ValidateConfigOrThrow(obsidian_config);
 
         ObsidianTarget obsidian_target(obsidian_config, nullptr);
-        UploadJob obsidian_job = MakeTestUploadJob("Obsidian 标题\n\n正文 $o$。", obsidian_config.upload_target);
+        UploadJob obsidian_job =
+            MakeTestUploadJob("Obsidian 标题\n\n"
+                              "每列选 (k) 个。\n\n"
+                              "[\n"
+                              "{1}\\quad \\text{或}\\quad {1,2}\n"
+                              "]\n\n"
+                              "复杂度：\n\n"
+                              "[\n"
+                              "O(n\\log n)\n"
+                              "]\n\n"
+                              "```text\n"
+                              "[\n"
+                              "not math\n"
+                              "]\n"
+                              "```\n",
+                              obsidian_config.upload_target);
         bool obsidian_checkpointed = false;
         obsidian_target.ProcessJob(&obsidian_job, [&]
                                    { obsidian_checkpointed = true; });
-        if (!obsidian_checkpointed || obsidian_job.remote_progress != 1 ||
-            !fs::exists(fs::path(Utf8ToWide(obsidian_job.remote_url))))
+        const fs::path obsidian_output_path = fs::path(Utf8ToWide(obsidian_job.remote_id));
+        if (!obsidian_checkpointed || obsidian_job.remote_progress != 1 || !fs::exists(obsidian_output_path) ||
+            obsidian_job.remote_url.empty())
         {
             fail("obsidian target did not write markdown file");
         }
-
-        AppConfig local_git_config;
-        local_git_config.upload_target = "local_git";
-        local_git_config.local_git_repo_dir = root / L"local-git";
-        local_git_config.local_git_directory = "notes/clipboard";
-        local_git_config.local_git_filename_prefix = "clip";
-        local_git_config.local_git_auto_commit = false;
-        fs::create_directories(local_git_config.local_git_repo_dir / L".git");
-        ValidateConfigOrThrow(local_git_config);
-
-        LocalGitTarget local_git_target(local_git_config, nullptr);
-        UploadJob local_git_job = MakeTestUploadJob("Git 标题\n\n正文 $g$。", local_git_config.upload_target);
-        bool local_git_checkpointed = false;
-        local_git_target.ProcessJob(&local_git_job, [&]
-                                    { local_git_checkpointed = true; });
-        if (!local_git_checkpointed || local_git_job.remote_progress != 1 ||
-            !fs::exists(fs::path(Utf8ToWide(local_git_job.remote_url))) ||
-            local_git_job.remote_id.find("notes") == std::string::npos)
-        {
-            fail("local_git target did not write markdown file");
-        }
-
-        AppConfig gist_config;
-        gist_config.upload_target = "github_gist";
-        gist_config.github_token = "github_secret_should_not_be_in_payload";
-        gist_config.github_gist_public = false;
-        gist_config.github_gist_filename_prefix = "Algo Notes";
-        ValidateConfigOrThrow(gist_config);
-
-        UploadJob gist_job = MakeTestUploadJob("Gist 标题\n\n正文 $z$。", gist_config.upload_target);
-        const std::string gist_payload = BuildGitHubGistPayload(gist_job, gist_config);
-        const JsonValue gist_json = ParseJson(gist_payload);
-        if (!gist_json.is_object())
-        {
-            fail("github_gist payload is not JSON object");
-        }
-        const JsonValue *gist_description = gist_json.find("description");
-        const JsonValue *gist_public = gist_json.find("public");
-        const JsonValue *gist_files = gist_json.find("files");
-        if (gist_description == nullptr || !gist_description->is_string() ||
-            gist_description->as_string() != "Gist 标题" || gist_public == nullptr || !gist_public->is_bool() ||
-            gist_public->as_bool() || gist_files == nullptr || !gist_files->is_object())
-        {
-            fail("github_gist payload top-level fields mismatch");
-        }
         else
         {
-            const JsonValue *file = gist_files->find("Algo-Notes-" + gist_job.hash.substr(0, 12) + ".md");
-            const JsonValue *file_content = file == nullptr ? nullptr : file->find("content");
-            if (file == nullptr || !file->is_object() || file_content == nullptr || !file_content->is_string() ||
-                file_content->as_string().find("正文 $z$。") == std::string::npos ||
-                file_content->as_string().find("job_id: " + gist_job.id) == std::string::npos)
+            const std::string obsidian_written = ReadWholeFile(obsidian_output_path);
+            if (obsidian_output_path.filename().wstring() != L"Obsidian 标题.md")
             {
-                fail("github_gist file content mismatch");
+                fail("obsidian filename should use the clean note title");
+            }
+            if (obsidian_written.find("---\ntags:\n  - \"算法\"\n  - \"cpp\"\n  - \"daily/note\"\n---\n\n# Obsidian 标题") != 0 ||
+                obsidian_written.find("每列选 $k$ 个。") == std::string::npos ||
+                obsidian_written.find("$$\n{1}\\quad \\text{或}\\quad {1,2}\n$$") == std::string::npos ||
+                obsidian_written.find("$$\nO(n\\log n)\n$$") == std::string::npos ||
+                obsidian_written.find("```text\n[\nnot math\n]\n```") == std::string::npos ||
+                obsidian_written.find("\n[\nO(n\\log n)\n]") != std::string::npos ||
+                obsidian_written.find("source: notion_clipboard_win") != std::string::npos)
+            {
+                fail("obsidian output did not normalize loose math for markdown");
             }
         }
-        if (gist_payload.find(gist_config.github_token) != std::string::npos)
-        {
-            fail("github token leaked into gist payload");
-        }
 
-        AppConfig invalid_gist_config;
-        invalid_gist_config.upload_target = "github_gist";
-        bool rejected_missing_github_token = false;
-        try
-        {
-            ValidateConfigOrThrow(invalid_gist_config);
-        }
-        catch (const std::exception &)
-        {
-            rejected_missing_github_token = true;
-        }
-        if (!rejected_missing_github_token)
-        {
-            fail("github_gist target accepted missing token");
-        }
+        AppConfig multi_config;
+        multi_config.upload_target = "markdown_file,obsidian";
+        multi_config.state_dir = root / L"multi-state";
+        multi_config.markdown_output_dir = root / L"multi-markdown";
+        multi_config.obsidian_vault_dir = root / L"multi-vault";
+        multi_config.obsidian_folder = "Inbox/Clipboard";
+        fs::create_directories(multi_config.obsidian_vault_dir);
+        ValidateConfigOrThrow(multi_config);
 
-        AppConfig repo_config;
-        repo_config.upload_target = "github_repo";
-        repo_config.github_token = "repo_secret_should_not_be_in_payload";
-        repo_config.github_repo_owner = "octo-org";
-        repo_config.github_repo_name = "notes repo";
-        repo_config.github_repo_branch = "main";
-        repo_config.github_repo_directory = "AI Notes/Clipboard";
-        repo_config.github_repo_filename_prefix = "Daily Clip";
-        ValidateConfigOrThrow(repo_config);
-
-        UploadJob repo_job = MakeTestUploadJob("Repo 标题\n\n正文 $w$。", repo_config.upload_target);
-        repo_job.created_at_ms = 123456789;
-        const std::string repo_path = BuildGitHubRepoFilePath(repo_job, repo_config);
-        const std::string repo_url = BuildGitHubRepoApiUrl(repo_job, repo_config);
-        const std::string repo_payload = BuildGitHubRepoPayload(repo_job, repo_config);
-        const JsonValue repo_json = ParseJson(repo_payload);
-        if (repo_path != "AI-Notes/Clipboard/Daily-Clip-123456789-" + repo_job.hash.substr(0, 12) + ".md")
+        std::unique_ptr<UploadTarget> multi_target = CreateUploadTarget(multi_config, nullptr);
+        multi_target->Validate();
+        UploadJob multi_markdown_job = MakeTestUploadJob("多目标标题\n\n正文 $m$。", "markdown_file");
+        UploadJob multi_obsidian_job = MakeTestUploadJob("多目标标题\n\n正文 $m$。", "obsidian");
+        multi_target->ProcessJob(&multi_markdown_job, [] {});
+        multi_target->ProcessJob(&multi_obsidian_job, [] {});
+        if (multi_target->Name() != "markdown_file,obsidian" || multi_markdown_job.remote_progress != 1 ||
+            multi_obsidian_job.remote_progress != 1 ||
+            !fs::exists(fs::path(Utf8ToWide(multi_markdown_job.remote_id))) ||
+            !fs::exists(fs::path(Utf8ToWide(multi_obsidian_job.remote_id))))
         {
-            fail("github_repo file path mismatch");
-        }
-        if (repo_url.find("https://api.github.com/repos/octo-org/notes%20repo/contents/AI-Notes/Clipboard/") != 0)
-        {
-            fail("github_repo API URL mismatch");
-        }
-        if (!repo_json.is_object())
-        {
-            fail("github_repo payload is not JSON object");
-        }
-        const JsonValue *repo_message = repo_json.find("message");
-        const JsonValue *repo_content = repo_json.find("content");
-        const JsonValue *repo_branch = repo_json.find("branch");
-        if (repo_message == nullptr || !repo_message->is_string() ||
-            repo_message->as_string() != "Add clipboard note: Repo 标题" || repo_content == nullptr ||
-            !repo_content->is_string() || repo_content->as_string().find('\n') != std::string::npos ||
-            repo_branch == nullptr || !repo_branch->is_string() || repo_branch->as_string() != "main")
-        {
-            fail("github_repo payload fields mismatch");
-        }
-        if (repo_payload.find(repo_config.github_token) != std::string::npos)
-        {
-            fail("github token leaked into repo payload");
-        }
-
-        AppConfig invalid_repo_config;
-        invalid_repo_config.upload_target = "github_repo";
-        invalid_repo_config.github_token = "token";
-        invalid_repo_config.github_repo_owner = "owner";
-        bool rejected_missing_repo_name = false;
-        try
-        {
-            ValidateConfigOrThrow(invalid_repo_config);
-        }
-        catch (const std::exception &)
-        {
-            rejected_missing_repo_name = true;
-        }
-        if (!rejected_missing_repo_name)
-        {
-            fail("github_repo target accepted missing repo name");
+            fail("multi upload target did not route jobs independently");
         }
 
         AppConfig yuque_config;
@@ -2190,10 +1806,7 @@ int RunUploadTargetSelfTest()
         std::cout << "[PASS] markdown_file upload target\n";
         std::cout << "[PASS] legacy queue progress migration\n";
         std::cout << "[PASS] obsidian upload target\n";
-        std::cout << "[PASS] local_git upload target\n";
         std::cout << "[PASS] webhook upload target payload\n";
-        std::cout << "[PASS] github_gist upload target payload\n";
-        std::cout << "[PASS] github_repo upload target payload\n";
         std::cout << "[PASS] yuque upload target payload\n";
         std::cout << "[PASS] feishu_doc upload target payload\n";
     }
