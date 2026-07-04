@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.2.1 - 2026-07-04
+
+- Add hotkey recording to the local configuration page, with Esc cancellation and automatic `enable_hotkey=true`.
+- Rewrite the Chinese and English README files as non-technical user guides.
+- Switch the repository license to MIT in the release line following `v0.2.0`.
+
 ## 0.2.0 - 2026-07-04
 
 - Focus the stable product surface on Notion and Obsidian.

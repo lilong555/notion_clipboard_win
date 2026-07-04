@@ -2,267 +2,202 @@
 
 语言：中文 | [English](README.en.md)
 
-Notion Clipboard Win 是一个 Windows 原生剪贴板上传工具。它常驻系统托盘，通过热键或剪贴板监听读取内容，将 Markdown、代码块、LaTeX 公式、表格和常见 HTML 剪贴板片段转换后上传到配置的目标后端。
+Notion Clipboard Win 是一个 Windows 托盘工具。它可以把你复制的内容一键保存到 Notion 或 Obsidian，适合保存网页内容、题解、代码片段、学习笔记和带公式的 Markdown 文本。
 
-项目当前聚焦 Notion 和 Obsidian 两条稳定写入路径。程序使用 C++17、Win32 和 WinHTTP 实现，不依赖第三方运行时。
+项目当前聚焦两条稳定路径：**Notion** 和 **Obsidian**。程序使用 C++17、Win32 和 WinHTTP 实现，不依赖第三方运行时。
 
 ## 主要能力
 
-- 系统托盘常驻，默认热键 `Ctrl+Shift+B` 上传当前剪贴板。
-- 可选自动监听剪贴板，支持 debounce 和短时间重复抑制。
-- 内置本地配置页面，可从托盘菜单打开，预填当前配置、验证配置并输出完整 ini。
-- 上传前先写入持久队列，断网、退出或远端限流后可继续重试。
-- 记录 `remote_id`、`remote_url` 和 `remote_progress`，支持跨后端断点恢复。
-- 支持 Notion `Retry-After`、HTTP 短重试和持久队列指数退避。
-- 支持自定义热键、托盘通知、开机自启和状态目录。
-- 记录最近上传结果，可查看 Notion URL、Obsidian 文件路径、本地文件链接和 Obsidian URI。
-- 支持从托盘菜单打开最近一次 Obsidian 笔记。
-- 支持从托盘菜单或配置页面验证当前配置，并输出 Notion/Obsidian 诊断报告。
-- 转换器覆盖 Markdown、HTML、公式、表格、代码语言归一化和常见误识别保护。
+- 默认热键 `Ctrl+Shift+B` 上传当前剪贴板。
+- 支持同时写入 Notion 和 Obsidian。
+- 支持 Markdown、HTML、代码块、表格、行内公式和整行公式。
+- 内置配置页面，不需要手写配置文件，并可直接录制新的全局热键。
+- 上传失败会自动进入队列，之后可以继续重试。
+- 托盘菜单可以查看最近上传结果、打开最近 Obsidian 笔记、验证配置。
 
-## 上传目标
+## 普通用户教程
 
-`upload_target` 支持单目标，也支持逗号分隔的多目标，例如 `upload_target=notion,obsidian`。多目标上传时，每个目标会进入独立队列任务，便于单独重试和记录远端结果。
+### 1. 下载和安装
 
-| `upload_target` | 说明 | 必要配置 |
-| --- | --- | --- |
-| `notion` | 创建 Notion 数据源页面并追加正文 block | `notion_token`、`data_source_id` 或 `database_id` |
-| `obsidian` | 写入 Obsidian vault 中的 Markdown 笔记 | `obsidian_vault_dir` |
+1. 打开 [GitHub Releases](https://github.com/lilong555/notion_clipboard_win/releases)。
+2. 下载最新的 `NotionClipboardWin-0.2.1-Setup.exe`。
+3. 双击安装。
+4. 从开始菜单启动 `Notion Clipboard Win`。
+5. 启动后程序会出现在 Windows 右下角托盘区域。
 
-Webhook、语雀和飞书文档会作为未来/实验平台继续打磨；当前配置页不把它们作为稳定入口。
+如果看不到托盘图标，点一下任务栏右下角的“上箭头”，Windows 可能把它折叠起来了。
 
-## 支持的内容
+### 2. 打开配置页面
 
-- 普通文本、标题、段落、分隔线。
-- Markdown 列表、任务列表、引用块、代码块和链接。
-- Markdown 表格、无分隔行管道表格，以及被空语言或 `text` 围栏包住的表格。
-- 行内公式：`$...$`、`\(...\)`。
-- 独立公式：`$$...$$`、`\[...\]`、`equation` / `align` / `gather` 环境。
-- KaTeX / MathJax HTML annotation 中的 TeX 公式。
-- 常见 Unicode 数学符号的保守 LaTeX 修复。
-- inline code、URL、Windows 路径和字面量 `$` 的保护，减少公式误判。
+1. 右键托盘图标。
+2. 选择“配置页面”。
+3. 浏览器会打开一个本地配置页面。
+4. 配好后点击“应用并重启”。
 
-## 项目结构
+配置页面只在本机打开，用来生成和保存本地 ini 配置。
 
-```text
-notion_clipboard_win/
-  CMakeLists.txt          CMake 构建入口
-  build-release.bat       Release 托盘版构建脚本
-  VERSION                 发布版本号的单一来源
-  config.example.ini      配置模板，不包含真实凭据
-  LICENSE                 MIT 开源许可证
-  installer/              Inno Setup 安装包脚本
-  scripts/                发布构建脚本
-  src/                    C++17 Win32 源码
-    main.cpp              托盘、CLI、剪贴板、上传线程
-    converter.cpp         Markdown/HTML/LaTeX 转换与自测
-    upload_target.cpp     Notion、Obsidian 和实验上传后端
-    config_page.cpp       本地 HTML 配置页面
-  test/                   转换回归样例
+### 3. 选择上传目标
+
+你可以只选择一个目标，也可以同时选择两个：
+
+- 只保存到 Notion：勾选 `Notion`。
+- 只保存到 Obsidian：勾选 `Obsidian`。
+- 同时保存到两个地方：同时勾选 `Notion` 和 `Obsidian`。
+
+保存后配置里对应的是：
+
+```ini
+upload_target=notion,obsidian
 ```
 
-## 快速开始
+### 4. 配置 Notion
 
-### 使用安装包
+如果你要上传到 Notion，需要准备两个信息：
 
-从 GitHub Releases 下载 `NotionClipboardWin-0.2.0-Setup.exe`，安装后从开始菜单启动 `Notion Clipboard Win`。安装包不会创建或覆盖你的真实 `notion_clipboard_win.ini`，首次使用仍需要准备配置文件。
+- `Notion Token`
+- `Data Source ID`
 
-### 从源码运行
+获取方式：
 
-复制配置模板：
+1. 打开 Notion 的 integrations 页面，新建一个 integration。
+2. 复制它的 secret token，填到配置页面的 `Notion Token`。
+3. 打开你的目标数据库。
+4. 将这个数据库共享给刚创建的 integration。
+5. 复制数据库或 data source 的 ID，填到 `Data Source ID`。
 
-```powershell
-copy config.example.ini notion_clipboard_win.ini
+目标数据库至少需要一个标题属性。其他属性可以不填，正文会作为页面内容追加。
+
+### 5. 配置 Obsidian
+
+如果你要上传到 Obsidian，需要选择一个 vault：
+
+1. 在配置页面找到 `Obsidian Vault`。
+2. 选择已经识别出来的 vault，或手动填写 vault 文件夹路径。
+3. 在 `Obsidian Folder` 里填写保存位置，例如 `Clipboard` 或 `Inbox/Clipboard`。
+4. 如果文件夹不存在，程序会在写入时自动创建。
+5. `Obsidian Tags` 是可选项，可以填写 `algorithm cpp study` 这类标签。
+
+写入 Obsidian 时，文件名会尽量使用内容标题。如果同名文件已经存在，会自动追加编号，避免覆盖旧笔记。
+
+### 6. 验证配置
+
+配置完成后建议先点：
+
+- “验证输出配置”
+- 或托盘菜单里的“验证当前配置”
+
+如果 Notion token、data source、Obsidian vault 或文件夹有问题，诊断报告会告诉你哪里没有配好。
+
+### 7. 调整热键
+
+默认上传热键是 `Ctrl+Shift+B`。如果这个组合键和其他软件冲突，可以在配置页面修改：
+
+1. 找到“全局热键”。
+2. 点击“录制热键”。
+3. 按下新的组合键，例如 `Ctrl+Alt+N`。
+4. 如果按错了，按 `Esc` 取消后重新录制。
+5. 确认“启用全局热键”已勾选。
+6. 点击“应用并重启”让新热键生效。
+
+也可以直接在输入框里手动填写，例如：
+
+```ini
+hotkey=Ctrl+Alt+N
 ```
 
-填写 Notion 最小配置：
+### 8. 上传一次内容
+
+日常使用只需要三步：
+
+1. 在网页、编辑器、聊天窗口或 PDF 里复制一段内容。
+2. 按你配置的上传热键，默认是 `Ctrl+Shift+B`。
+3. 等待托盘通知，或在托盘菜单中查看“最近上传结果”。
+
+你也可以右键托盘图标，选择“上传当前剪贴板”。
+
+### 9. 查看上传结果
+
+上传成功后：
+
+- Notion：最近上传结果里会显示 Notion 页面链接。
+- Obsidian：文件会出现在你配置的 vault 和子目录中。
+- 托盘菜单里的“打开最近 Obsidian 笔记”可以直接打开最新保存的笔记。
+
+如果上传失败，任务会保存在本地队列里，之后会继续重试。
+
+## 常见问题
+
+### 配置页面修改后没有生效
+
+请确认点击的是“应用并重启”，不是只复制配置。应用重启后，新配置才会被正在运行的托盘程序读取。
+
+### Obsidian 找不到文件夹
+
+先确认 `Obsidian Vault` 选的是正确的仓库。`Obsidian Folder` 是 vault 内部的子目录，例如 `Clipboard`，不是完整磁盘路径。
+
+### Notion 上传失败
+
+常见原因有：
+
+- token 填错。
+- 数据库没有共享给 integration。
+- `data_source_id` 填错。
+- 目标数据库没有标题属性。
+
+可以先打开配置页面，点击“验证输出配置”查看诊断。
+
+### 代码块没有颜色
+
+Notion 的代码高亮依赖代码块语言。程序会尽量识别 `cpp`、`sql`、`python` 等语言；如果原文没有语言标记，Notion 可能按普通文本显示。
+
+### 公式没有按预期显示
+
+程序支持常见的 `$...$`、`$$...$$`、`\(...\)`、`\[...\]`。如果原文格式很松散，建议把问题样例放到 `test/` 后运行 dry run 检查转换结果。
+
+## 手动配置示例
+
+如果你不使用配置页面，也可以编辑 `notion_clipboard_win.ini`。
+
+只上传到 Notion：
 
 ```ini
 upload_target=notion
 notion_token=secret_xxx
 data_source_id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-hotkey=Ctrl+Shift+B
 ```
 
-同时写入 Notion 和 Obsidian：
+同时上传到 Notion 和 Obsidian：
 
 ```ini
 upload_target=notion,obsidian
 notion_token=secret_xxx
 data_source_id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-obsidian_vault_dir=E:\obsidian\第一个库
+obsidian_vault_dir=E:\obsidian\MyVault
 obsidian_folder=Inbox/Clipboard
 obsidian_tags=algorithm cpp
 ```
 
-也可以通过环境变量保存敏感配置：
+完整配置见 [config.example.ini](config.example.ini)。
 
-```powershell
-setx NOTION_TOKEN "secret_xxx"
-setx NOTION_DATA_SOURCE_ID "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-```
+## 开发者命令
 
-构建并启动：
-
-```powershell
-.\build-release.bat
-.\build\Release\notion_clipboard_win.exe --config .\notion_clipboard_win.ini
-```
-
-复制文本后按 `Ctrl+Shift+B` 上传，或右键托盘图标选择“上传当前剪贴板”。写入 Obsidian 成功后，可从托盘菜单选择“打开最近 Obsidian 笔记”直接定位新文件。
-
-## Notion 准备
-
-1. 在 Notion 创建 integration 并获取 token。
-2. 将目标数据库共享给该 integration。
-3. 推荐填写 `data_source_id`。如果只填写旧版 `database_id`，程序会通过 Notion API 解析第一个 data source。
-4. 目标数据源至少需要一个 `title` 类型属性。
-
-本项目按 Notion API `2026-03-11` 实现，创建数据库页面时使用 `parent.type = "data_source_id"`。
-
-## 构建与运行
-
-本项目需要 Windows、CMake，以及 MSVC 或 MinGW。
-
-构建 GUI 托盘版：
+普通用户不需要执行这些命令。只有从源码构建或调试时才需要。
 
 ```powershell
 cmake -S . -B build
 cmake --build build --config Release
 ```
 
-构建带控制台的调试版：
+运行自测：
 
 ```powershell
 cmake -S . -B build-console -DNOTION_CLIPBOARD_WIN_GUI=OFF
 cmake --build build-console --config Release
-```
-
-常用命令：
-
-```powershell
-.\build\Release\notion_clipboard_win.exe --config .\notion_clipboard_win.ini
-.\build\Release\notion_clipboard_win.exe --once --config .\notion_clipboard_win.ini
-.\build\Release\notion_clipboard_win.exe --validate-config --config .\notion_clipboard_win.ini
-.\build\Release\notion_clipboard_win.exe --help
-```
-
-生成安装包需要 Inno Setup 6：
-
-```powershell
-winget install JRSoftware.InnoSetup
-.\scripts\build-installer.ps1
-```
-
-脚本会构建 console 版、运行 `--self-test`、构建 GUI Release 版，然后生成：
-
-```text
-dist\NotionClipboardWin-0.2.0-Setup.exe
-dist\NotionClipboardWin-0.2.0-Setup.exe.sha256
-```
-
-## 配置
-
-推荐先从托盘菜单打开“配置页面”。页面会预填当前配置，支持同时选择 Notion 和 Obsidian、自动列出 Obsidian vault 和子目录、显示写入位置预览、验证当前输出配置、查看诊断与最近上传结果、显示/隐藏 token、复制完整 ini、下载 ini，以及“应用并重启”写回当前配置文件。
-
-核心配置示例：
-
-```ini
-upload_target=notion
-notion_token=
-data_source_id=
-database_id=
-title_property_name=
-content_property_name=
-created_time_property_name=创建时间
-hotkey=Ctrl+Shift+B
-enable_hotkey=true
-enable_clipboard_listener=false
-tray_notifications=true
-start_with_windows=false
-```
-
-完整字段见 [config.example.ini](config.example.ini)。
-
-### 目标配置
-
-- `notion`：设置 `notion_token`，并优先填写 `data_source_id`。
-- `obsidian`：设置 `obsidian_vault_dir` 和可选 `obsidian_folder`；配置页可选择已有子目录，也可输入新目录，写入时会自动创建。可选 `obsidian_tags` 会写入 YAML frontmatter 的 `tags` 字段，多个标签用逗号、分号或空格分隔。文件名直接使用剪贴板标题，同名时自动追加编号。
-- Webhook、语雀和飞书文档：保留为未来/实验方向，暂不作为当前稳定配置路径。
-
-## 托盘菜单
-
-- 上传当前剪贴板。
-- 查看、启用、暂停或录制热键。
-- 启用或关闭托盘通知。
-- 启用或关闭开机自动启动。
-- 临时启用或暂停剪贴板自动监听。
-- 验证当前配置，打开配置页面、配置文件、配置诊断、最近上传结果、最近 Obsidian 笔记、日志和状态目录。
-- 退出程序。
-
-## 数据与可靠性
-
-默认状态目录：
-
-```text
-%LOCALAPPDATA%\NotionClipboardWin
-```
-
-目录内容：
-
-- `queue/`：等待上传或待重试任务。
-- `failed/`：超过重试次数或遇到永久错误的任务。
-- `config-diagnostics.md`：最近一次配置诊断，包含 Notion/Obsidian 的可用性和错误信息。
-- `recent-upload-results.md`：最近上传结果，包含 Notion URL、Notion page id、Obsidian 文件路径、本地文件 URI、Obsidian URI 或失败错误。
-- `last-obsidian-upload.ini`：最近一次 Obsidian 成功写入的位置，用于托盘菜单“打开最近 Obsidian 笔记”。
-- `notion-clipboard-win.log`：运行日志。
-
-Notion API 没有通用写入幂等键。本程序会在远端资源创建成功后立即记录 `remote_id` / `remote_url`，并在每批追加成功后记录 `remote_progress`。如果服务端已写入但客户端没有收到响应，极端情况下仍可能出现重复追加；较小批次、较长读取超时和持久进度记录可以降低风险。
-
-旧队列文件中的 `page_id`、`page_url` 和 `appended_block_count` 会自动兼容读取。
-
-## 开发与验证
-
-运行本地自测：
-
-```powershell
 .\build-console\Release\notion_clipboard_win.exe --self-test
 ```
 
-对指定文件做转换统计，不读取剪贴板，也不会上传：
+转换 dry run：
 
 ```powershell
 .\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
 ```
-
-自测覆盖算法讲解文本、HTML 清理、Markdown/LaTeX、表格、公式拆分、代码块拆分、字面量 `$`、inline code、URL/path、KaTeX/MathJax、请求切分、配置写回和各上传后端 payload。
-
-贡献代码时请保持：
-
-- C++17，MSVC `/W4 /permissive- /utf-8` 下无新增警告。
-- 转换逻辑尽量保持平台无关，不在 `converter.cpp` 引入 Win32 依赖。
-- 新增上传平台时实现 `UploadTarget`，不要把平台逻辑塞进剪贴板或队列模块。
-- 修改转换规则时补充 `--self-test` 用例，必要时更新 `test/` 样例。
-
-## 发布流程
-
-发布 `v0.2.0` 时按以下顺序验证：
-
-```powershell
-.\build-console\Release\notion_clipboard_win.exe --self-test
-.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
-.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\after.txt
-.\scripts\build-installer.ps1
-```
-
-在 GitHub Release 中上传安装包和 `.sha256` 文件。发布前确认没有提交真实 token、运行配置、日志、队列状态或本地状态目录。
-
-## 许可证
-
-本项目采用 MIT License。你可以自由使用、复制、修改、分发、再授权和销售本软件，前提是保留版权声明和许可声明。完整条款见 [LICENSE](LICENSE)。
-
-## 安全
-
-- 不要提交真实 `notion_token` 或本地 ini。
-- `build/`、`build-console/`、运行日志、队列状态和本地状态目录不应进入仓库。
-- 开源发布前请确认示例文档和测试文件只包含假 token 或脱敏数据。

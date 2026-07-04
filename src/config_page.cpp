@@ -143,6 +143,14 @@ void AddCheckbox(std::ostringstream *html, const std::string &key, const std::st
     *html << "</label>\n";
 }
 
+void AddHotkeyInput(std::ostringstream *html, const std::string &value)
+{
+    *html << "<label><span>全局热键</span><div class=\"input-action\"><input data-key=\"hotkey\" id=\"hotkeyInput\" "
+          << "type=\"text\" value=\"" << HtmlEscape(value)
+          << "\"><button type=\"button\" id=\"recordHotkey\" class=\"secondary\">录制热键</button></div>"
+          << "<small id=\"hotkeyHelp\">点击录制后按组合键，例如 Ctrl+Shift+B；Esc 取消。</small></label>\n";
+}
+
 void AddSectionStart(std::ostringstream *html, const std::string &title, const std::string &desc)
 {
     *html << "<section><h2>" << HtmlEscape(title) << "</h2><p>" << HtmlEscape(desc) << "</p><div class=\"grid\">\n";
@@ -414,6 +422,7 @@ h1{font-size:20px;margin:0}.path{color:var(--muted);font-size:12px;word-break:br
 section,.output{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}h2{font-size:15px;margin:0 0 4px}p{margin:0 0 12px;color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}label{display:grid;gap:5px}label span{font-weight:600}input,select,textarea{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:6px;padding:9px 10px;font:inherit}
 small{color:var(--muted)}.check{grid-template-columns:auto 1fr;align-items:start}.check input{width:auto;margin-top:3px}.check small{grid-column:2}.wide{grid-column:1/-1}.preview{border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:6px;padding:9px 10px;background:var(--bg);color:var(--muted);word-break:break-all}.preview strong{color:var(--text)}
+.input-action{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}.input-action button{white-space:nowrap}
 .actions{display:flex;gap:8px;flex-wrap:wrap}button,.download{border:0;border-radius:6px;background:var(--accent);color:white;padding:9px 12px;font-weight:600;cursor:pointer;text-decoration:none}button:disabled{opacity:.5;cursor:not-allowed}.secondary{background:var(--accent2)}
 textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-size:12px}.target{display:flex;gap:10px;align-items:flex-start}.target-list{display:flex;gap:8px;flex-wrap:wrap;max-width:780px}.target-list label{display:flex;grid-template-columns:none;gap:5px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);font-size:12px}.target-list input{width:auto}.hint{border-left:3px solid var(--accent);padding-left:10px;color:var(--muted)}
 .status{margin:10px 0 12px;border:1px solid var(--line);border-left-width:3px;border-radius:6px;padding:9px 10px;color:var(--muted);background:var(--bg)}.status.ok{border-left-color:var(--ok);color:var(--ok)}.status.error{border-left-color:var(--danger);color:var(--danger)}
@@ -455,7 +464,7 @@ textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-si
 
     AddSectionStart(&html, "应用行为", "热键、自动监听和重试参数。");
     AddInput(&html, "state_dir", "状态目录", PathValue(config.state_dir));
-    AddInput(&html, "hotkey", "全局热键", config.hotkey);
+    AddHotkeyInput(&html, config.hotkey);
     AddCheckbox(&html, "enable_hotkey", "启用全局热键", config.enable_hotkey);
     AddCheckbox(&html, "enable_clipboard_listener", "自动监听剪贴板", config.enable_clipboard_listener);
     AddCheckbox(&html, "tray_notifications", "托盘通知", config.tray_notifications);
@@ -527,6 +536,16 @@ document.getElementById("openConfigDiagnostics").addEventListener("click",()=>{l
 document.getElementById("openRecentUploads").addEventListener("click",()=>{location.href=protocolUrl("open-recent-uploads");});
 document.getElementById("refreshObs").addEventListener("click",()=>{location.href=protocolUrl("open-config-page"); setTimeout(()=>location.reload(),1200);});
 document.getElementById("copy").addEventListener("click",async()=>{build(); await navigator.clipboard.writeText(document.getElementById("ini").value);});
+const hotkeyInput=document.getElementById("hotkeyInput");
+const hotkeyHelp=document.getElementById("hotkeyHelp");
+const recordHotkeyButton=document.getElementById("recordHotkey");
+let recordingHotkey=false;
+function recordedKeyLabel(event){const modifierKeys=new Set(["Control","Shift","Alt","Meta","OS"]); if(modifierKeys.has(event.key))return ""; if(event.code&&event.code.startsWith("Key")&&event.code.length===4)return event.code.slice(3).toUpperCase(); if(event.code&&event.code.startsWith("Digit")&&event.code.length===6)return event.code.slice(5); if(event.code&&event.code.startsWith("Numpad")&&event.code.length===7&&/^[0-9]$/.test(event.code.slice(6)))return event.code.slice(6); if(/^F([1-9]|1[0-9]|2[0-4])$/.test(event.key))return event.key.toUpperCase(); const names={ArrowLeft:"Left",ArrowRight:"Right",ArrowUp:"Up",ArrowDown:"Down",PageUp:"PageUp",PageDown:"PageDown",Escape:"Esc"," ":"Space",Spacebar:"Space",Enter:"Enter",Return:"Enter",Tab:"Tab",Backspace:"Backspace",Delete:"Delete",Insert:"Insert",Home:"Home",End:"End",Pause:"Pause",PrintScreen:"PrintScreen"}; if(names[event.key])return names[event.key]; if(event.key&&/^[a-zA-Z0-9]$/.test(event.key))return event.key.toUpperCase(); return "";}
+function formatRecordedHotkey(event){const parts=[]; if(event.ctrlKey)parts.push("Ctrl"); if(event.altKey)parts.push("Alt"); if(event.shiftKey)parts.push("Shift"); if(event.metaKey)parts.push("Win"); const key=recordedKeyLabel(event); if(!key)return ""; if(parts.length===0)return ""; parts.push(key); return parts.join("+");}
+function stopHotkeyRecording(message){recordingHotkey=false; document.removeEventListener("keydown",handleRecordedHotkey,true); recordHotkeyButton.textContent="录制热键"; if(message)hotkeyHelp.textContent=message;}
+function handleRecordedHotkey(event){if(!recordingHotkey)return; event.preventDefault(); event.stopPropagation(); if(event.key==="Escape"){stopHotkeyRecording("已取消录制。点击录制后按组合键，例如 Ctrl+Shift+B。"); return;} const display=formatRecordedHotkey(event); if(!display){hotkeyHelp.textContent="请按 Ctrl、Alt、Shift 或 Win 加一个主按键。Esc 取消。"; return;} hotkeyInput.value=display; const enable=document.querySelector('[data-key="enable_hotkey"]'); if(enable)enable.checked=true; stopHotkeyRecording(`已录制：${display}`); build();}
+function startHotkeyRecording(){if(recordingHotkey)return; recordingHotkey=true; recordHotkeyButton.textContent="录制中..."; hotkeyHelp.textContent="请按新的组合键，例如 Ctrl+Alt+N；Esc 取消。"; hotkeyInput.focus(); hotkeyInput.select(); document.addEventListener("keydown",handleRecordedHotkey,true);}
+recordHotkeyButton.addEventListener("click",startHotkeyRecording);
 document.getElementById("reveal").addEventListener("click",()=>document.querySelectorAll('input[type="password"],input[data-was-password]').forEach(el=>{if(el.type==="password"){el.dataset.wasPassword="1";el.type="text"}else{el.type="password"}}));
 document.querySelectorAll("[data-choice-target]").forEach(syncChoice);
 syncTargets();
@@ -618,6 +637,10 @@ int RunConfigPageSelfTest()
                                        "protocolUrl(\"open-recent-uploads\")",
                                        "id=\"status\"", "validateConfig()", "applyButton.disabled",
                                        "配置完整。保存后将上传到：", "需要处理：",
+                                       "id=\"hotkeyInput\"", "id=\"recordHotkey\"", "录制热键",
+                                       "recordedKeyLabel(event)", "formatRecordedHotkey(event)",
+                                       "handleRecordedHotkey(event)", "startHotkeyRecording()",
+                                       "请按新的组合键，例如 Ctrl+Alt+N；Esc 取消。",
                                        "notion-clipboard-win:/apply-config/", "应用并重启"})
             {
                 if (html.find(needle) == std::string::npos)

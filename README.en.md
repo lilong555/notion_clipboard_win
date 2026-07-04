@@ -2,89 +2,171 @@
 
 Language: [中文](README.md) | English
 
-Notion Clipboard Win is a native Windows clipboard uploader. It runs in the system tray, reads clipboard content through a hotkey or optional clipboard listener, converts Markdown, code blocks, LaTeX formulas, tables, and common HTML clipboard fragments, then uploads the result to the configured target.
+Notion Clipboard Win is a Windows tray app that saves copied content to Notion or Obsidian with one hotkey. It is useful for web clips, solution notes, code snippets, study notes, Markdown text, and formula-heavy content.
 
-The project currently focuses on two stable write paths: Notion and Obsidian. The app is implemented with C++17, Win32, and WinHTTP, with no third-party runtime dependency.
+The project currently focuses on two stable targets: **Notion** and **Obsidian**. It is implemented with C++17, Win32, and WinHTTP, with no third-party runtime dependency.
 
 ## Features
 
-- Background tray process with `Ctrl+Shift+B` as the default upload hotkey.
-- Optional clipboard listener with debounce and short duplicate suppression.
-- Local configuration page from the tray menu, prefilled from the active config, able to validate settings and emit a complete ini file.
-- Persistent queue before upload, so network failures, process exits, and rate limits can be retried.
-- Stores `remote_id`, `remote_url`, and `remote_progress` for resumable uploads across targets.
-- Supports Notion `Retry-After`, short HTTP retries, and persistent queue exponential backoff.
-- Configurable hotkey, tray notifications, Windows startup, and state directory.
-- Records recent upload results with Notion URLs, Obsidian file paths, local file links, and Obsidian URIs.
-- Can open the latest successful Obsidian note from the tray menu.
-- Can validate the active configuration from the tray menu or configuration page and write a Notion/Obsidian diagnostics report.
-- Conversion coverage for Markdown, HTML, formulas, tables, code language normalization, and common false-positive protections.
+- Upload the current clipboard with the default `Ctrl+Shift+B` hotkey.
+- Write to Notion, Obsidian, or both at the same time.
+- Convert Markdown, HTML, code blocks, tables, inline formulas, and display formulas.
+- Built-in local configuration page, so most users do not need to edit ini files by hand, including hotkey recording.
+- Failed uploads are queued locally and can be retried later.
+- Tray menu for recent upload results, latest Obsidian note, and configuration diagnostics.
 
-## Upload Targets
+## User Guide
 
-`upload_target` accepts a single target or a comma-separated list such as `upload_target=notion,obsidian`. In multi-target mode, each target is queued as an independent job so retries and remote progress stay isolated.
+### 1. Download And Install
 
-| `upload_target` | Description | Required configuration |
-| --- | --- | --- |
-| `notion` | Create a Notion data source page and append body blocks | `notion_token`, `data_source_id` or `database_id` |
-| `obsidian` | Write Markdown notes into an Obsidian vault | `obsidian_vault_dir` |
+1. Open [GitHub Releases](https://github.com/lilong555/notion_clipboard_win/releases).
+2. Download the latest `NotionClipboardWin-0.2.1-Setup.exe`.
+3. Run the installer.
+4. Start `Notion Clipboard Win` from the Start menu.
+5. The app appears in the Windows system tray.
 
-Webhook, Yuque, and Feishu Docs remain future/experimental directions. They are not exposed as stable targets in the configuration page.
+If you do not see the tray icon, click the small up arrow near the Windows clock. Windows may have hidden it there.
 
-## Supported Content
+### 2. Open The Configuration Page
 
-- Plain text, headings, paragraphs, and dividers.
-- Markdown lists, task lists, quotes, fenced code blocks, and links.
-- Markdown tables, separator-less pipe tables, and tables wrapped in empty-language or `text` fences.
-- Inline formulas: `$...$`, `\(...\)`.
-- Display formulas: `$$...$$`, `\[...\]`, `equation` / `align` / `gather` environments.
-- TeX annotations from KaTeX / MathJax HTML.
-- Conservative LaTeX repair for common Unicode math symbols.
-- Protection for inline code, URLs, Windows paths, and literal dollar signs to reduce formula false positives.
+1. Right-click the tray icon.
+2. Choose "Configuration page".
+3. A local page opens in your browser.
+4. After editing, click "Apply and restart".
 
-## Project Layout
+The configuration page is local to your computer. It is used to generate and save the local ini configuration.
 
-```text
-notion_clipboard_win/
-  CMakeLists.txt          CMake entry point
-  build-release.bat       Release tray build helper
-  VERSION                 Single source of truth for release version
-  config.example.ini      Safe config template
-  LICENSE                 MIT open-source license
-  installer/              Inno Setup installer script
-  scripts/                Release build scripts
-  src/                    C++17 Win32 source
-    main.cpp              Tray, CLI, clipboard, upload worker
-    converter.cpp         Markdown/HTML/LaTeX conversion and self-tests
-    upload_target.cpp     Notion, Obsidian, and experimental upload targets
-    config_page.cpp       Local HTML configuration page
-  test/                   Conversion regression samples
+### 3. Choose Upload Targets
+
+You can choose one target or both:
+
+- Notion only: check `Notion`.
+- Obsidian only: check `Obsidian`.
+- Both: check `Notion` and `Obsidian`.
+
+The saved config uses:
+
+```ini
+upload_target=notion,obsidian
 ```
 
-## Quick Start
+### 4. Configure Notion
 
-### Use The Installer
+To upload to Notion, you need:
 
-Download `NotionClipboardWin-0.2.0-Setup.exe` from GitHub Releases, install it, and start `Notion Clipboard Win` from the Start menu. The installer does not create or overwrite your real `notion_clipboard_win.ini`; you still need to prepare a config file before first use.
+- `Notion Token`
+- `Data Source ID`
 
-### Run From Source
+Setup steps:
 
-Copy the config template:
+1. Create a Notion integration and copy its secret token.
+2. Paste the token into `Notion Token`.
+3. Open your target Notion database.
+4. Share the database with the integration.
+5. Copy the database or data source ID into `Data Source ID`.
 
-```powershell
-copy config.example.ini notion_clipboard_win.ini
+The target database must have at least one title property. Other properties are optional; the clipboard body is appended as page content.
+
+### 5. Configure Obsidian
+
+To upload to Obsidian, choose a vault:
+
+1. Find `Obsidian Vault` on the configuration page.
+2. Select a detected vault, or manually enter the vault folder path.
+3. Enter a save folder in `Obsidian Folder`, such as `Clipboard` or `Inbox/Clipboard`.
+4. Missing folders are created automatically when writing.
+5. `Obsidian Tags` is optional. You can enter tags like `algorithm cpp study`.
+
+Obsidian files use the detected content title as the filename when possible. If a file with the same name already exists, the app adds a numeric suffix instead of overwriting it.
+
+### 6. Validate The Configuration
+
+After editing, use:
+
+- "Validate output config" on the configuration page
+- or "Validate current config" from the tray menu
+
+The diagnostics report helps identify incorrect Notion tokens, data source IDs, Obsidian vault paths, or folder settings.
+
+### 7. Change The Hotkey
+
+The default upload hotkey is `Ctrl+Shift+B`. If it conflicts with another app, change it from the configuration page:
+
+1. Find "Global hotkey".
+2. Click "Record hotkey".
+3. Press a new key combination, such as `Ctrl+Alt+N`.
+4. If you pressed the wrong keys, press `Esc` to cancel and record again.
+5. Make sure "Enable global hotkey" is checked.
+6. Click "Apply and restart" to activate the new hotkey.
+
+You can also type the value manually:
+
+```ini
+hotkey=Ctrl+Alt+N
 ```
 
-Fill the minimum Notion configuration:
+### 8. Upload Content
+
+Daily use takes three steps:
+
+1. Copy content from a browser, editor, chat window, or PDF.
+2. Press your configured upload hotkey. The default is `Ctrl+Shift+B`.
+3. Wait for the tray notification, or open "Recent upload results" from the tray menu.
+
+You can also right-click the tray icon and choose "Upload current clipboard".
+
+### 9. Check The Result
+
+After a successful upload:
+
+- Notion: recent upload results include the Notion page link.
+- Obsidian: the Markdown file appears in the configured vault folder.
+- The tray menu can open the latest Obsidian note directly.
+
+If an upload fails, it stays in the local queue and can be retried later.
+
+## Troubleshooting
+
+### Configuration Changes Did Not Apply
+
+Make sure you clicked "Apply and restart". Copying or downloading the config does not update the currently running tray process.
+
+### Obsidian Folder Is Missing
+
+Check that `Obsidian Vault` points to the correct vault. `Obsidian Folder` is a folder inside the vault, such as `Clipboard`, not a full disk path.
+
+### Notion Upload Fails
+
+Common causes:
+
+- The token is incorrect.
+- The database was not shared with the integration.
+- `data_source_id` is incorrect.
+- The target database has no title property.
+
+Open the configuration page and run validation to see the diagnostic report.
+
+### Code Blocks Have No Color
+
+Notion highlighting depends on the code block language. The app tries to detect languages such as `cpp`, `sql`, and `python`; if the source has no language marker, Notion may display it as plain text.
+
+### Formulas Do Not Render As Expected
+
+The app supports common `$...$`, `$$...$$`, `\(...\)`, and `\[...\]` formulas. For unusual source text, add the sample to `test/` and run a dry run to inspect the conversion result.
+
+## Manual Configuration Examples
+
+If you do not use the configuration page, edit `notion_clipboard_win.ini`.
+
+Notion only:
 
 ```ini
 upload_target=notion
 notion_token=secret_xxx
 data_source_id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
-hotkey=Ctrl+Shift+B
 ```
 
-To write to Notion and Obsidian at the same time:
+Notion and Obsidian:
 
 ```ini
 upload_target=notion,obsidian
@@ -95,174 +177,27 @@ obsidian_folder=Inbox/Clipboard
 obsidian_tags=algorithm cpp
 ```
 
-You can keep secrets out of the config file by using environment variables:
+See [config.example.ini](config.example.ini) for the full template.
 
-```powershell
-setx NOTION_TOKEN "secret_xxx"
-setx NOTION_DATA_SOURCE_ID "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-```
+## Developer Commands
 
-Build and start:
-
-```powershell
-.\build-release.bat
-.\build\Release\notion_clipboard_win.exe --config .\notion_clipboard_win.ini
-```
-
-Copy text and press `Ctrl+Shift+B`, or right-click the tray icon and choose "Upload current clipboard". After a successful Obsidian write, use "Open latest Obsidian note" from the tray menu to jump to the new file.
-
-## Notion Setup
-
-1. Create a Notion integration and get its token.
-2. Share the target database with that integration.
-3. Prefer `data_source_id`. If only legacy `database_id` is configured, the app resolves the first data source through the Notion API.
-4. The target data source must contain at least one `title` property.
-
-This project uses Notion API version `2026-03-11` and creates database pages with `parent.type = "data_source_id"`.
-
-## Build And Run
-
-Requirements: Windows, CMake, and MSVC or MinGW.
-
-Build the GUI tray binary:
+Most users do not need these commands. They are only for building from source or debugging.
 
 ```powershell
 cmake -S . -B build
 cmake --build build --config Release
 ```
 
-Build the console binary for debugging:
+Run self-tests:
 
 ```powershell
 cmake -S . -B build-console -DNOTION_CLIPBOARD_WIN_GUI=OFF
 cmake --build build-console --config Release
-```
-
-Common commands:
-
-```powershell
-.\build\Release\notion_clipboard_win.exe --config .\notion_clipboard_win.ini
-.\build\Release\notion_clipboard_win.exe --once --config .\notion_clipboard_win.ini
-.\build\Release\notion_clipboard_win.exe --validate-config --config .\notion_clipboard_win.ini
-.\build\Release\notion_clipboard_win.exe --help
-```
-
-Building the installer requires Inno Setup 6:
-
-```powershell
-winget install JRSoftware.InnoSetup
-.\scripts\build-installer.ps1
-```
-
-The script builds the console binary, runs `--self-test`, builds the GUI Release binary, then produces:
-
-```text
-dist\NotionClipboardWin-0.2.0-Setup.exe
-dist\NotionClipboardWin-0.2.0-Setup.exe.sha256
-```
-
-## Configuration
-
-The recommended path is to open "Configuration page" from the tray menu. The page is prefilled from the active config, can select Notion and Obsidian at the same time, list registered Obsidian vaults and folders, preview the final Obsidian write location, validate the current output config, open diagnostics and recent upload results, reveal/hide tokens, copy or download the full ini, and apply changes by writing the active config file and restarting the tray app.
-
-Core options:
-
-```ini
-upload_target=notion
-notion_token=
-data_source_id=
-database_id=
-title_property_name=
-content_property_name=
-created_time_property_name=Created time
-hotkey=Ctrl+Shift+B
-enable_hotkey=true
-enable_clipboard_listener=false
-tray_notifications=true
-start_with_windows=false
-```
-
-See [config.example.ini](config.example.ini) for the full template.
-
-### Target Configuration
-
-- `notion`: set `notion_token` and prefer `data_source_id`.
-- `obsidian`: set `obsidian_vault_dir` and optional `obsidian_folder`; the configuration page can select an existing folder or accept a new folder, which is created when writing. Optional `obsidian_tags` are written to the YAML frontmatter `tags` field, separated by commas, semicolons, or whitespace. Filenames use the clipboard title directly, with a numeric suffix on conflicts.
-- Webhook, Yuque, and Feishu Docs: retained as future/experimental directions, not as the current stable configuration path.
-
-## Tray Menu
-
-- Upload current clipboard.
-- View, enable, pause, or record the hotkey.
-- Enable or disable tray notifications.
-- Enable or disable start with Windows.
-- Temporarily enable or pause automatic clipboard listening.
-- Validate the active configuration, and open the configuration page, config file, diagnostics report, recent upload results, latest Obsidian note, log file, and state directory.
-- Exit.
-
-## Data And Reliability
-
-Default state directory:
-
-```text
-%LOCALAPPDATA%\NotionClipboardWin
-```
-
-Contents:
-
-- `queue/`: pending or retrying jobs.
-- `failed/`: jobs that exceeded retry limits or hit permanent errors.
-- `config-diagnostics.md`: the latest configuration diagnostics with Notion/Obsidian availability and errors.
-- `recent-upload-results.md`: recent upload results with Notion URLs, Notion page ids, Obsidian file paths, local file URIs, Obsidian URIs, or failure errors.
-- `last-obsidian-upload.ini`: the latest successful Obsidian write location, used by "Open latest Obsidian note" in the tray menu.
-- `notion-clipboard-win.log`: runtime log.
-
-The Notion API does not provide a general write idempotency key. The app records `remote_id` / `remote_url` immediately after creating a remote resource, and records `remote_progress` after each successful append batch. If the server writes a batch but the client loses the response, a duplicate append is still possible in an extreme case; smaller batches, longer read timeouts, and persisted progress reduce the risk.
-
-Older queue files with `page_id`, `page_url`, and `appended_block_count` are still read for compatibility.
-
-## Development
-
-Run local self-tests:
-
-```powershell
 .\build-console\Release\notion_clipboard_win.exe --self-test
 ```
 
-Dry-run conversion for a file without reading the clipboard or uploading:
+Dry-run conversion:
 
 ```powershell
 .\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
 ```
-
-Self-tests cover algorithm explanation text, HTML cleanup, Markdown/LaTeX, tables, formula splitting, code splitting, literal dollar signs, inline code, URL/path protection, KaTeX/MathJax, request splitting, config persistence, and upload target payloads.
-
-Contribution expectations:
-
-- Use C++17 and keep MSVC `/W4 /permissive- /utf-8` builds warning-free.
-- Keep conversion logic platform-independent; do not add Win32 dependencies to `converter.cpp`.
-- Add new platforms through `UploadTarget` implementations instead of clipboard or queue code.
-- Add `--self-test` coverage when changing conversion rules, and update `test/` samples when useful.
-
-## Release Process
-
-For `v0.2.0`, verify in this order:
-
-```powershell
-.\build-console\Release\notion_clipboard_win.exe --self-test
-.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
-.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\after.txt
-.\scripts\build-installer.ps1
-```
-
-Upload the installer and `.sha256` file to the GitHub Release. Before publishing, confirm that no real tokens, runtime configs, logs, queue state, or local state directories are committed.
-
-## License
-
-This project is licensed under the MIT License. You may use, copy, modify, distribute, sublicense, and sell copies of the software as long as the copyright and license notices are preserved. See [LICENSE](LICENSE) for the full terms.
-
-## Security
-
-- Do not commit real `notion_token` values or local ini files.
-- Keep `build/`, `build-console/`, logs, queue state, and local state directories out of the repository.
-- Before publishing public examples, verify that documentation and test files contain only fake or redacted secrets.
