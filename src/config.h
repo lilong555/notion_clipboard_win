@@ -57,6 +57,7 @@ struct CliOptions
     std::string apply_config_url;
     std::string open_config_page_url;
     std::string validate_config_url;
+    std::string test_upload_url;
     std::string open_config_diagnostics_url;
     std::string open_recent_uploads_url;
     bool once = false;

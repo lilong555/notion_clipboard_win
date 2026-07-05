@@ -11,7 +11,7 @@ The project currently focuses on two stable targets: **Notion** and **Obsidian**
 - Upload the current clipboard with the default `Ctrl+Shift+B` hotkey.
 - Write to Notion, Obsidian, or both at the same time.
 - Convert Markdown, HTML, code blocks, tables, inline formulas, and display formulas.
-- Built-in local configuration page, so most users do not need to edit ini files by hand, including hotkey recording.
+- Built-in local configuration page, so most users do not need to edit ini files by hand, including hotkey recording, validation, and test upload.
 - Failed uploads are queued locally and can be retried later.
 - Tray menu for recent upload results, latest Obsidian note, and configuration diagnostics.
 
@@ -81,14 +81,16 @@ To upload to Obsidian, choose a vault:
 
 Obsidian files use the detected content title as the filename when possible. If a file with the same name already exists, the app adds a numeric suffix instead of overwriting it.
 
-### 6. Validate The Configuration
+### 6. Validate And Test Upload
 
-After editing, use:
+After editing, check it in this order:
 
-- "Validate output config" on the configuration page
-- or "Validate current config" from the tray menu
+1. Click "Validate config" on the configuration page to check the Notion token, data source, Obsidian vault, and folder.
+2. If validation passes, click "Test upload". The app writes one real test item using the current page settings.
+3. Read the automatically opened "Recent upload results" file and confirm the Notion page link or Obsidian file path.
+4. When everything looks right, click "Apply and restart" to save the configuration.
 
-The diagnostics report helps identify incorrect Notion tokens, data source IDs, Obsidian vault paths, or folder settings.
+"Test upload" writes an item named `Notion Clipboard Win 测试上传`. It does not save the configuration to the ini file; only "Apply and restart" saves it.
 
 ### 7. Change The Hotkey
 
@@ -146,7 +148,7 @@ Common causes:
 - `data_source_id` is incorrect.
 - The target database has no title property.
 
-Open the configuration page and run validation to see the diagnostic report.
+Open the configuration page, click "Validate config", then use "Test upload" after validation passes.
 
 ### Code Blocks Have No Color
 

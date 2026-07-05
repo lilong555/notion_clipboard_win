@@ -504,6 +504,83 @@ UploadJob MakeUploadJob(const std::string &content, const std::string &target)
     return job;
 }
 
+std::string BuildConfigTestUploadContent(const AppConfig &config)
+{
+    std::ostringstream content;
+    content << "Notion Clipboard Win 测试上传\n\n"
+            << "这是一条由配置页面发出的测试内容，用来确认当前上传目标可以正常写入。\n\n"
+            << "- 时间: " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
+            << "- 上传目标: " << ReportLineValue(config.upload_target) << "\n\n"
+            << "行内公式测试：$a+b=c$。\n\n"
+            << "```cpp\n"
+            << "int main() {\n"
+            << "    return 0;\n"
+            << "}\n"
+            << "```\n";
+    return content.str();
+}
+
+bool RunConfigTestUpload(const AppConfig &config, Logger *logger)
+{
+    const std::vector<std::string> targets = ParseUploadTargets(config.upload_target);
+    const std::filesystem::path recent_path = RecentUploadResultsPath(config);
+    std::filesystem::create_directories(recent_path.parent_path());
+
+    if (targets.empty())
+    {
+        UploadJob job = MakeUploadJob(BuildConfigTestUploadContent(config), "configuration");
+        job.id = "test-" + job.id;
+        WriteRecentUploadResultReport(recent_path, job, false, "upload_target 不能为空");
+        return false;
+    }
+
+    bool all_ok = true;
+    const std::string content = BuildConfigTestUploadContent(config);
+    for (const std::string &target_name : targets)
+    {
+        UploadJob job = MakeUploadJob(content, target_name);
+        job.id = "test-" + job.id;
+        try
+        {
+            AppConfig target_config = config;
+            target_config.upload_target = target_name;
+            ValidateConfigOrThrow(target_config);
+            std::unique_ptr<UploadTarget> upload_target = CreateUploadTarget(target_config, logger);
+            upload_target->Validate();
+            upload_target->ProcessJob(&job, [] {});
+            WriteRecentUploadResultReport(recent_path, job, true, "");
+            WriteLastObsidianUploadState(LastObsidianUploadPath(config), job);
+            if (logger != nullptr)
+            {
+                logger->Info("测试上传成功: [" + target_name + "] " + job.id +
+                             (job.remote_url.empty() ? "" : " -> " + job.remote_url));
+            }
+        }
+        catch (const UploadFailure &ex)
+        {
+            all_ok = false;
+            job.last_error = ex.what();
+            WriteRecentUploadResultReport(recent_path, job, false, ex.what());
+            if (logger != nullptr)
+            {
+                logger->Warn("测试上传失败: [" + target_name + "] " + std::string(ex.what()));
+            }
+        }
+        catch (const std::exception &ex)
+        {
+            all_ok = false;
+            job.last_error = ex.what();
+            WriteRecentUploadResultReport(recent_path, job, false, ex.what());
+            if (logger != nullptr)
+            {
+                logger->Warn("测试上传失败: [" + target_name + "] " + std::string(ex.what()));
+            }
+        }
+    }
+
+    return all_ok;
+}
+
 class UploadWorker
 {
 public:
@@ -2351,6 +2428,42 @@ int ValidateConfigUrlAndOpenReport(const std::string &url)
     return 0;
 }
 
+int TestUploadUrlAndOpenReport(const std::string &url)
+{
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "测试上传");
+    std::filesystem::path temp_path;
+    std::error_code ignored;
+
+    try
+    {
+        const AppConfig config = LoadConfigFromProtocolUrlOrContent(url, config_path, &temp_path);
+        std::filesystem::create_directories(config.state_dir);
+        Logger logger(config.state_dir / L"notion-clipboard-win.log", false);
+        RunConfigTestUpload(config, &logger);
+        std::filesystem::remove(temp_path, ignored);
+        OpenPathWithShell(RecentUploadResultsPath(config), "打开最近上传结果");
+    }
+    catch (const std::exception &ex)
+    {
+        AppConfig fallback_config;
+        try
+        {
+            fallback_config = LoadConfig(config_path);
+        }
+        catch (...)
+        {
+        }
+        std::filesystem::create_directories(fallback_config.state_dir);
+        const std::filesystem::path recent_path = RecentUploadResultsPath(fallback_config);
+        UploadJob job = MakeUploadJob(BuildConfigTestUploadContent(fallback_config), "configuration");
+        job.id = "test-" + job.id;
+        WriteRecentUploadResultReport(recent_path, job, false, ex.what());
+        std::filesystem::remove(temp_path, ignored);
+        OpenPathWithShell(recent_path, "打开最近上传结果");
+    }
+    return 0;
+}
+
 int OpenConfigDiagnosticsUrl(const std::string &url)
 {
     const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "配置诊断");
@@ -2416,6 +2529,16 @@ int RunMainSelfTest()
             if (!parsed.open_config_page_on_start)
             {
                 fail("open-config-page-on-start flag was not parsed");
+            }
+        }
+        {
+            wchar_t exe[] = L"notion_clipboard_win.exe";
+            wchar_t url[] = L"notion-clipboard-win:/test-upload/?path=C%3A%5CTemp%5Cnotion_clipboard_win.ini";
+            wchar_t *argv[] = {exe, url};
+            const CliOptions parsed = ParseCli(2, argv);
+            if (parsed.test_upload_url.empty())
+            {
+                fail("test-upload protocol URL was not parsed");
             }
         }
 
@@ -2547,6 +2670,35 @@ int RunMainSelfTest()
                                       "upload_target=obsidian\nobsidian_vault_dir=" +
                                           WideToUtf8(protocol_vault.wstring()) + "\nhotkey=Ctrl+Alt+N\n");
 
+        AppConfig test_upload_config;
+        test_upload_config.upload_target = "obsidian";
+        test_upload_config.state_dir = root / L"test-upload-state";
+        test_upload_config.obsidian_vault_dir = root / L"test-upload-vault";
+        test_upload_config.obsidian_folder = "Inbox";
+        fs::create_directories(test_upload_config.obsidian_vault_dir);
+        const bool test_upload_ok = RunConfigTestUpload(test_upload_config, nullptr);
+        const fs::path test_upload_report_path = RecentUploadResultsPath(test_upload_config);
+        const std::string test_upload_report = ReadWholeFile(test_upload_report_path);
+        const fs::path test_upload_inbox = test_upload_config.obsidian_vault_dir / L"Inbox";
+        bool test_upload_file_found = false;
+        if (fs::exists(test_upload_inbox))
+        {
+            for (const fs::directory_entry &entry : fs::directory_iterator(test_upload_inbox))
+            {
+                if (entry.path().extension() == L".md")
+                {
+                    test_upload_file_found = true;
+                    break;
+                }
+            }
+        }
+        if (!test_upload_ok || !test_upload_file_found ||
+            test_upload_report.find("SUCCESS - obsidian") == std::string::npos ||
+            test_upload_report.find("Notion Clipboard Win 测试上传") == std::string::npos)
+        {
+            fail("configuration test upload did not write obsidian result");
+        }
+
         AppConfig diagnostic_config;
         diagnostic_config.upload_target = "obsidian,notion";
         diagnostic_config.state_dir = root / L"diag-state";
@@ -2603,6 +2755,10 @@ int AppMain(int argc, wchar_t **argv)
     if (!cli.validate_config_url.empty())
     {
         return ValidateConfigUrlAndOpenReport(cli.validate_config_url);
+    }
+    if (!cli.test_upload_url.empty())
+    {
+        return TestUploadUrlAndOpenReport(cli.test_upload_url);
     }
     if (!cli.open_config_diagnostics_url.empty())
     {
