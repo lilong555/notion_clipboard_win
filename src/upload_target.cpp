@@ -1656,7 +1656,24 @@ int RunUploadTargetSelfTest()
                               "[\n"
                               "not math\n"
                               "]\n"
-                              "```\n",
+                              "```\n\n"
+                              "## 1. (opt[t][i]) 是什么？\n\n"
+                              "我们有 DP：\n\n"
+                              "[\n"
+                              "dp[t][i]=\\min_{j<i}{dp[t-1][j]+(s_i-s_j)^2}\n"
+                              "]\n\n"
+                              "表示最后一段是：\n\n"
+                              "[\n"
+                              "[6,9]\n"
+                              "]\n\n"
+                              "那么：\n\n"
+                              "[\n"
+                              "opt[t][i]\n"
+                              "]\n\n"
+                              "先算中点：\n\n"
+                              "[\n"
+                              "mid\n"
+                              "]\n",
                               obsidian_config.upload_target);
         bool obsidian_checkpointed = false;
         obsidian_target.ProcessJob(&obsidian_job, [&]
@@ -1679,7 +1696,15 @@ int RunUploadTargetSelfTest()
                 obsidian_written.find("$$\n{1}\\quad \\text{或}\\quad {1,2}\n$$") == std::string::npos ||
                 obsidian_written.find("$$\nO(n\\log n)\n$$") == std::string::npos ||
                 obsidian_written.find("```text\n[\nnot math\n]\n```") == std::string::npos ||
+                obsidian_written.find("## 1. $opt[t][i]$ 是什么？") == std::string::npos ||
+                obsidian_written.find("$$\ndp[t][i]=\\min_{j<i}{dp[t-1][j]+(s_i-s_j)^2}\n$$") ==
+                    std::string::npos ||
+                obsidian_written.find("$$\n[6,9]\n$$") == std::string::npos ||
+                obsidian_written.find("$$\nopt[t][i]\n$$") == std::string::npos ||
+                obsidian_written.find("$$\nmid\n$$") == std::string::npos ||
                 obsidian_written.find("\n[\nO(n\\log n)\n]") != std::string::npos ||
+                obsidian_written.find("\n[\n[6,9]\n]\n") != std::string::npos ||
+                obsidian_written.find("## 1. (opt[t][i]) 是什么？") != std::string::npos ||
                 obsidian_written.find("source: notion_clipboard_win") != std::string::npos)
             {
                 fail("obsidian output did not normalize loose math for markdown");

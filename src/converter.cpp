@@ -1588,6 +1588,101 @@ bool HasKnownMathUtf8Symbol(const std::string &text)
                        { return text.find(symbol) != std::string::npos; });
 }
 
+bool IsAsciiMathExpressionChar(unsigned char ch)
+{
+    return ch < 128 && (std::isalnum(ch) || std::isspace(ch) || ch == '+' || ch == '-' || ch == '*' ||
+                        ch == '/' || ch == '=' || ch == '^' || ch == '_' || ch == '{' || ch == '}' ||
+                        ch == '[' || ch == ']' || ch == '(' || ch == ')' || ch == ',' || ch == '.' ||
+                        ch == '<' || ch == '>' || ch == '|');
+}
+
+bool IsSimpleAsciiMathToken(const std::string &text)
+{
+    const std::string trimmed = Trim(text);
+    if (trimmed.empty())
+    {
+        return false;
+    }
+
+    bool has_ascii_alnum = false;
+    for (unsigned char ch : trimmed)
+    {
+        if (ch >= 128 || !(std::isalnum(ch) || ch == '_'))
+        {
+            return false;
+        }
+        has_ascii_alnum = has_ascii_alnum || std::isalnum(ch) != 0;
+    }
+    return has_ascii_alnum;
+}
+
+bool LooksLikeCommaSeparatedAsciiMathTokens(const std::string &text)
+{
+    const std::string trimmed = Trim(text);
+    if (trimmed.find(',') == std::string::npos)
+    {
+        return false;
+    }
+
+    std::size_t begin = 0;
+    bool saw_token = false;
+    while (begin <= trimmed.size())
+    {
+        const std::size_t end = trimmed.find(',', begin);
+        if (!IsSimpleAsciiMathToken(trimmed.substr(begin, end == std::string::npos ? std::string::npos : end - begin)))
+        {
+            return false;
+        }
+        saw_token = true;
+        if (end == std::string::npos)
+        {
+            break;
+        }
+        begin = end + 1;
+    }
+    return saw_token;
+}
+
+bool LooksLikeAsciiIndexedOrRangeFormula(const std::string &expression)
+{
+    const std::string trimmed = Trim(expression);
+    if (trimmed.find('[') == std::string::npos || trimmed.find(']') == std::string::npos)
+    {
+        return false;
+    }
+
+    bool has_ascii_alnum = false;
+    for (unsigned char ch : trimmed)
+    {
+        if (!IsAsciiMathExpressionChar(ch))
+        {
+            return false;
+        }
+        has_ascii_alnum = has_ascii_alnum || std::isalnum(ch) != 0;
+    }
+    if (!has_ascii_alnum)
+    {
+        return false;
+    }
+
+    if (trimmed.front() == '[' && trimmed.back() == ']')
+    {
+        const std::string inner = trimmed.substr(1, trimmed.size() - 2);
+        return LooksLikeCommaSeparatedAsciiMathTokens(inner);
+    }
+
+    for (std::size_t pos = 1; pos < trimmed.size(); ++pos)
+    {
+        if (trimmed[pos] == '[' && (std::isalnum(static_cast<unsigned char>(trimmed[pos - 1])) ||
+                                    trimmed[pos - 1] == '_' || trimmed[pos - 1] == ']' ||
+                                    trimmed[pos - 1] == ')'))
+        {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool LooksLikeBlockLatexExpression(const std::string &expression)
 {
     const std::string cleaned = Trim(RemoveLatexUnderlineArtifactLines(expression));
@@ -1599,6 +1694,11 @@ bool LooksLikeBlockLatexExpression(const std::string &expression)
     {
         return true;
     }
+    if (LooksLikeAsciiIndexedOrRangeFormula(cleaned) || IsSimpleAsciiMathToken(cleaned) ||
+        LooksLikeCommaSeparatedAsciiMathTokens(cleaned))
+    {
+        return true;
+    }
     bool has_ascii_alnum = false;
     bool has_ascii_math_operator = false;
     bool only_ascii_math_chars = true;
@@ -1607,9 +1707,7 @@ bool LooksLikeBlockLatexExpression(const std::string &expression)
         has_ascii_alnum = has_ascii_alnum || std::isalnum(ch) != 0;
         has_ascii_math_operator =
             has_ascii_math_operator || ch == '+' || ch == '-' || ch == '*' || ch == '/' || ch == '<' || ch == '>';
-        if (ch >= 128 || !(std::isalnum(ch) || std::isspace(ch) || ch == '+' || ch == '-' || ch == '*' || ch == '/' ||
-                           ch == '=' || ch == '^' || ch == '_' || ch == '{' || ch == '}' || ch == '[' || ch == ']' ||
-                           ch == '(' || ch == ')' || ch == ',' || ch == '.' || ch == '<' || ch == '>' || ch == '|'))
+        if (!IsAsciiMathExpressionChar(ch))
         {
             only_ascii_math_chars = false;
         }
@@ -1784,6 +1882,10 @@ bool LooksLikeObsidianLooseInlineMath(const std::string &expression)
         return true;
     }
     if (LooksLikeAsciiFunctionFormula(trimmed))
+    {
+        return true;
+    }
+    if (LooksLikeAsciiIndexedOrRangeFormula(trimmed))
     {
         return true;
     }
@@ -6671,6 +6773,32 @@ int RunSelfTest()
           "\"expression\":\"\\\\sum_{d\\\\mid n}\\\\mu(d)\\\\tau\\\\left(\\\\frac nd\\\\right)\\n\\n\\\\sum_{d\\\\mid n}\\\\mu(d)\\n\\\\sum_{e\\\\mid \\\\frac nd}1.\"",
          "\"expression\":\"\\\\sum_{r\\\\mid n}\\\\sum_{d\\\\mid r}\\\\mu(d).\""},
          {"=========================", "\"type\":\"heading_1\""}},
+        {"indexed loose bracket formulas",
+         "## 1. (opt[t][i]) 是什么？\n\n"
+         "我们有 DP：\n\n"
+         "[\n"
+         "dp[t][i]=\\min_{j<i}{dp[t-1][j]+(s_i-s_j)^2}\n"
+         "]\n\n"
+         "表示最后一段是：\n\n"
+         "[\n"
+         "[6,9]\n"
+         "]\n\n"
+         "那么：\n\n"
+         "[\n"
+         "opt[t][i]\n"
+         "]\n\n"
+         "先算中点：\n\n"
+         "[\n"
+         "mid\n"
+         "]\n",
+         "1. (opt[t][i]) 是什么？",
+         4,
+         0,
+         0,
+         0,
+         {"\"expression\":\"dp[t][i]=\\\\min_{j<i}{dp[t-1][j]+(s_i-s_j)^2}\"",
+          "\"expression\":\"[6,9]\"", "\"expression\":\"opt[t][i]\"", "\"expression\":\"mid\""},
+         {"\"content\":\"[6,9]\"", "\"content\":\"opt[t][i]\"", "\"link\":{\"url\""}},
         {"alternating segment loose bracket formulas",
          "比如交替段长度 (L=6)：\n\n"
          "```text\n"
