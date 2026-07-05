@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.2 - 2026-07-05
+
+- Add a configuration-page test upload action that writes a real test item to the selected Notion and/or Obsidian targets, then opens recent upload results.
+- Limit automatic configuration-page opening to the installer post-install launch; normal startup and missing configuration now only show guidance.
+- Clarify hotkey recording and configuration validation guidance in the user documentation.
+- Keep the stable product focus on Notion and Obsidian while future-only platforms remain out of the main configuration flow.
+
 ## 0.2.1 - 2026-07-04
 
 - Add hotkey recording to the local configuration page, with Esc cancellation and automatic `enable_hotkey=true`.

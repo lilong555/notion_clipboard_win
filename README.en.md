@@ -20,7 +20,7 @@ The project currently focuses on two stable targets: **Notion** and **Obsidian**
 ### 1. Download And Install
 
 1. Open [GitHub Releases](https://github.com/lilong555/notion_clipboard_win/releases).
-2. Download the latest `NotionClipboardWin-0.2.1-Setup.exe`.
+2. Download the latest `NotionClipboardWin-0.2.2-Setup.exe`.
 3. Run the installer.
 4. Start `Notion Clipboard Win` from the Start menu.
 5. The app appears in the Windows system tray.

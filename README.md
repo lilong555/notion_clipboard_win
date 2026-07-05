@@ -20,7 +20,7 @@ Notion Clipboard Win 是一个 Windows 托盘工具。它可以把你复制的�
 ### 1. 下载和安装
 
 1. 打开 [GitHub Releases](https://github.com/lilong555/notion_clipboard_win/releases)。
-2. 下载最新的 `NotionClipboardWin-0.2.1-Setup.exe`。
+2. 下载最新的 `NotionClipboardWin-0.2.2-Setup.exe`。
 3. 双击安装。
 4. 从开始菜单启动 `Notion Clipboard Win`。
 5. 启动后程序会出现在 Windows 右下角托盘区域。
