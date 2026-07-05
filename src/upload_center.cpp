@@ -53,6 +53,32 @@ fs::path UploadCenterPath(const AppConfig &config)
     return config.state_dir / L"upload-center.html";
 }
 
+std::string PercentEncodeQueryValue(const std::string &value)
+{
+    static constexpr char kHex[] = "0123456789ABCDEF";
+    std::string output;
+    output.reserve(value.size());
+    for (unsigned char ch : value)
+    {
+        if ((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '-' ||
+            ch == '_' || ch == '.' || ch == '~')
+        {
+            output.push_back(static_cast<char>(ch));
+            continue;
+        }
+        output.push_back('%');
+        output.push_back(kHex[(ch >> 4) & 0x0f]);
+        output.push_back(kHex[ch & 0x0f]);
+    }
+    return output;
+}
+
+std::string ProtocolUrl(const std::string &action, const fs::path &config_path)
+{
+    return "notion-clipboard-win:/" + action + "/?path=" +
+           PercentEncodeQueryValue(WideToUtf8(config_path.wstring()));
+}
+
 std::string HtmlEscape(const std::string &text)
 {
     std::string output;
@@ -398,6 +424,26 @@ UploadJob JobFromJsonForCenter(const std::string &text)
     return job;
 }
 
+std::string JobToJsonForRetry(const UploadJob &job)
+{
+    std::ostringstream json;
+    json << "{\n"
+         << "  \"id\":\"" << EscapeJson(job.id) << "\",\n"
+         << "  \"created_at_ms\":" << job.created_at_ms << ",\n"
+         << "  \"not_before_ms\":0,\n"
+         << "  \"attempts\":0,\n"
+         << "  \"target\":\"" << EscapeJson(job.target) << "\",\n"
+         << "  \"hash\":\"" << EscapeJson(job.hash) << "\",\n"
+         << "  \"title\":\"" << EscapeJson(job.title) << "\",\n"
+         << "  \"content\":\"" << EscapeJson(job.content) << "\",\n"
+         << "  \"remote_id\":\"" << EscapeJson(job.remote_id) << "\",\n"
+         << "  \"remote_url\":\"" << EscapeJson(job.remote_url) << "\",\n"
+         << "  \"remote_progress\":" << static_cast<unsigned long long>(job.remote_progress) << ",\n"
+         << "  \"last_error\":\"\"\n"
+         << "}\n";
+    return json.str();
+}
+
 std::vector<fs::path> ListJobFiles(const fs::path &dir)
 {
     std::vector<fs::path> files;
@@ -452,6 +498,26 @@ std::vector<QueueRecord> LoadQueueRecords(const AppConfig &config, const wchar_t
         records.resize(kMaxQueueRows);
     }
     return records;
+}
+
+fs::path UniqueQueuePath(const fs::path &queue_dir, const fs::path &source_path, const std::string &job_id)
+{
+    fs::path candidate = queue_dir / source_path.filename();
+    if (!fs::exists(candidate))
+    {
+        return candidate;
+    }
+
+    const std::wstring stem = source_path.stem().wstring();
+    for (int i = 1; i <= 1000; ++i)
+    {
+        candidate = queue_dir / (stem + L"-retry-" + std::to_wstring(NowUnixMs()) + L"-" + std::to_wstring(i) + L".job");
+        if (!fs::exists(candidate))
+        {
+            return candidate;
+        }
+    }
+    return queue_dir / (Utf8ToWide(job_id) + L"-retry.job");
 }
 
 std::string DisplayTime(std::uint64_t unix_ms)
@@ -557,7 +623,33 @@ void AppendQueueTable(std::ostringstream *html, const std::vector<QueueRecord> &
 }
 }
 
-std::filesystem::path WriteUploadCenterPage(const AppConfig &config)
+std::size_t RetryFailedUploads(const AppConfig &config)
+{
+    const fs::path failed_dir = config.state_dir / L"failed";
+    const fs::path queue_dir = config.state_dir / L"queue";
+    fs::create_directories(queue_dir);
+
+    std::size_t retried = 0;
+    for (const fs::path &path : ListJobFiles(failed_dir))
+    {
+        try
+        {
+            UploadJob job = JobFromJsonForCenter(ReadWholeFile(path));
+            const fs::path queue_path = UniqueQueuePath(queue_dir, path, job.id);
+            AtomicWriteFile(queue_path, JobToJsonForRetry(job));
+            std::error_code ignored;
+            fs::remove(path, ignored);
+            ++retried;
+        }
+        catch (...)
+        {
+            // Corrupt failed jobs stay in failed/ so the upload center can still show them.
+        }
+    }
+    return retried;
+}
+
+std::filesystem::path WriteUploadCenterPage(const AppConfig &config, const std::filesystem::path &config_path)
 {
     std::filesystem::create_directories(config.state_dir);
     const fs::path output_path = UploadCenterPath(config);
@@ -583,6 +675,7 @@ std::filesystem::path WriteUploadCenterPage(const AppConfig &config)
     const std::string state_dir = WideToUtf8(config.state_dir.wstring());
     const std::string state_dir_uri = BuildFileUriFromUtf8Path(state_dir);
     const std::string recent_uri = BuildFileUriFromUtf8Path(WideToUtf8(recent_path.wstring()));
+    const std::string retry_failed_url = ProtocolUrl("retry-failed-uploads", config_path);
     const std::size_t success_count = std::count_if(recent_records.begin(), recent_records.end(), [](const RecentRecord &record)
                                                     { return ToLowerAscii(record.status) == "success"; });
     const std::size_t failed_count = std::count_if(recent_records.begin(), recent_records.end(), [](const RecentRecord &record)
@@ -613,9 +706,11 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:8px;m
 <header><div class="bar"><div><h1>上传中心</h1><div class="path">状态目录：)"
          << HtmlEscape(state_dir) << R"(</div></div><div class="toolbar"><a class="button" href=")"
          << HtmlEscape(state_dir_uri) << R"(">打开状态目录</a><a class="button" href=")"
-         << HtmlEscape(recent_uri) << R"(">原始报告</a><button type="button" onclick='location.reload()'>刷新</button></div></div></header>
+         << HtmlEscape(recent_uri) << R"(">原始报告</a><a class="button" href=")"
+         << HtmlEscape(retry_failed_url)
+         << R"HTML(" onclick="return confirm('将 failed 目录中的任务移回等待队列并立即重试。继续吗？')">重试失败任务</a><button type="button" onclick='location.reload()'>刷新</button></div></div></header>
 <main class="wrap">
-<div class="metrics"><div class="metric"><strong>)"
+<div class="metrics"><div class="metric"><strong>)HTML"
          << recent_records.size() << R"(</strong><span>最近记录</span></div><div class="metric"><strong>)"
          << success_count << R"(</strong><span>成功</span></div><div class="metric"><strong>)"
          << failed_count << R"(</strong><span>失败记录</span></div><div class="metric"><strong>)"
@@ -694,16 +789,31 @@ int RunUploadCenterSelfTest()
                         "  \"last_error\":\"permanent error\"\n"
                         "}\n");
 
-        const fs::path page = WriteUploadCenterPage(config);
+        const fs::path page = WriteUploadCenterPage(config, root / L"notion_clipboard_win.ini");
         const std::string html = ReadWholeFile(page);
         for (const char *needle : {"上传中心", "Upload Center Title", "https://www.notion.so/page", "vault missing",
                                    "Queued Title", "temporary error", "Failed Queue Title", "permanent error",
-                                   "页面是打开时生成的本地快照", "data-copy=", "打开状态目录", "原始报告"})
+                                   "页面是打开时生成的本地快照", "data-copy=", "打开状态目录", "原始报告",
+                                   "retry-failed-uploads", "重试失败任务"})
         {
             if (html.find(needle) == std::string::npos)
             {
                 fail(std::string("missing expected upload center content: ") + needle);
             }
+        }
+
+        const std::size_t retried = RetryFailedUploads(config);
+        if (retried != 1 || !fs::exists(config.state_dir / L"queue" / L"failed.job") ||
+            fs::exists(config.state_dir / L"failed" / L"failed.job"))
+        {
+            fail("retry failed uploads did not move failed job to queue");
+        }
+        const std::string retried_job = ReadWholeFile(config.state_dir / L"queue" / L"failed.job");
+        if (retried_job.find("\"attempts\":0") == std::string::npos ||
+            retried_job.find("\"not_before_ms\":0") == std::string::npos ||
+            retried_job.find("\"last_error\":\"\"") == std::string::npos)
+        {
+            fail("retry failed uploads did not reset retry metadata");
         }
     }
     catch (const std::exception &ex)

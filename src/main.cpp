@@ -76,6 +76,7 @@ using ncw::RunObsidianSelfTest;
 using ncw::RunSelfTest;
 using ncw::RunUploadCenterSelfTest;
 using ncw::RunUploadTargetSelfTest;
+using ncw::RetryFailedUploads;
 using ncw::SetAutoStartEnabled;
 using ncw::Trim;
 using ncw::ToLowerAscii;
@@ -94,6 +95,7 @@ constexpr UINT kUploadHotkeyId = 2001;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayCallbackMessage = WM_APP + 1;
 constexpr UINT kUploadResultMessage = WM_APP + 2;
+constexpr UINT kWakeUploadWorkerMessage = WM_APP + 3;
 constexpr UINT kMenuUploadNow = 3001;
 constexpr UINT kMenuHotkeyStatus = 3002;
 constexpr UINT kMenuToggleHotkey = 3003;
@@ -1111,6 +1113,12 @@ private:
             }
             return 0;
         }
+        case kWakeUploadWorkerMessage:
+            if (worker_ != nullptr)
+            {
+                worker_->Notify();
+            }
+            return 0;
         case WM_CLIPBOARDUPDATE:
             if (clipboard_listener_registered_)
             {
@@ -1705,7 +1713,7 @@ private:
     {
         try
         {
-            OpenPath(WriteUploadCenterPage(*config_));
+            OpenPath(WriteUploadCenterPage(*config_, config_path_));
         }
         catch (const std::exception &ex)
         {
@@ -2329,6 +2337,15 @@ void OpenPathWithShell(const std::filesystem::path &path, const char *action_nam
     }
 }
 
+void WakeRunningUploadWorker()
+{
+    HWND existing = FindWindowW(L"NotionClipboardWinTrayWindow", kAppDisplayName);
+    if (existing != nullptr)
+    {
+        PostMessageW(existing, kWakeUploadWorkerMessage, 0, 0);
+    }
+}
+
 void WriteFileIfMissing(const std::filesystem::path &path, const std::string &content)
 {
     std::filesystem::create_directories(path.parent_path());
@@ -2460,7 +2477,7 @@ int TestUploadUrlAndOpenReport(const std::string &url)
         Logger logger(config.state_dir / L"notion-clipboard-win.log", false);
         RunConfigTestUpload(config, &logger);
         std::filesystem::remove(temp_path, ignored);
-        OpenPathWithShell(WriteUploadCenterPage(config), "打开上传中心");
+        OpenPathWithShell(WriteUploadCenterPage(config, config_path), "打开上传中心");
     }
     catch (const std::exception &ex)
     {
@@ -2478,7 +2495,7 @@ int TestUploadUrlAndOpenReport(const std::string &url)
         job.id = "test-" + job.id;
         WriteRecentUploadResultReport(recent_path, job, false, ex.what());
         std::filesystem::remove(temp_path, ignored);
-        OpenPathWithShell(WriteUploadCenterPage(fallback_config), "打开上传中心");
+        OpenPathWithShell(WriteUploadCenterPage(fallback_config, config_path), "打开上传中心");
     }
     return 0;
 }
@@ -2509,7 +2526,21 @@ int OpenUploadCenterUrl(const std::string &url)
 {
     const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "上传中心");
     const AppConfig config = LoadConfig(config_path);
-    const std::filesystem::path page_path = WriteUploadCenterPage(config);
+    const std::filesystem::path page_path = WriteUploadCenterPage(config, config_path);
+    OpenPathWithShell(page_path, "打开上传中心");
+    return 0;
+}
+
+int RetryFailedUploadsUrlAndOpenCenter(const std::string &url)
+{
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "重试失败任务");
+    const AppConfig config = LoadConfig(config_path);
+    const std::size_t retried = RetryFailedUploads(config);
+    if (retried > 0)
+    {
+        WakeRunningUploadWorker();
+    }
+    const std::filesystem::path page_path = WriteUploadCenterPage(config, config_path);
     OpenPathWithShell(page_path, "打开上传中心");
     return 0;
 }
@@ -2577,6 +2608,16 @@ int RunMainSelfTest()
             if (parsed.open_upload_center_url.empty())
             {
                 fail("open-upload-center protocol URL was not parsed");
+            }
+        }
+        {
+            wchar_t exe[] = L"notion_clipboard_win.exe";
+            wchar_t url[] = L"notion-clipboard-win:/retry-failed-uploads/?path=C%3A%5CTemp%5Cnotion_clipboard_win.ini";
+            wchar_t *argv[] = {exe, url};
+            const CliOptions parsed = ParseCli(2, argv);
+            if (parsed.retry_failed_uploads_url.empty())
+            {
+                fail("retry-failed-uploads protocol URL was not parsed");
             }
         }
 
@@ -2805,6 +2846,10 @@ int AppMain(int argc, wchar_t **argv)
     if (!cli.open_upload_center_url.empty())
     {
         return OpenUploadCenterUrl(cli.open_upload_center_url);
+    }
+    if (!cli.retry_failed_uploads_url.empty())
+    {
+        return RetryFailedUploadsUrlAndOpenCenter(cli.retry_failed_uploads_url);
     }
     if (!cli.open_recent_uploads_url.empty())
     {

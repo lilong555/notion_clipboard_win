@@ -13,7 +13,7 @@ The project currently focuses on two stable targets: **Notion** and **Obsidian**
 - Convert Markdown, HTML, code blocks, tables, inline formulas, and display formulas.
 - Built-in local configuration page, so most users do not need to edit ini files by hand, including hotkey recording, validation, and test upload.
 - Failed uploads are queued locally and can be retried later.
-- Tray menu for the upload center, recent records, queue status, latest Obsidian note, and configuration diagnostics.
+- Tray menu for the upload center, recent records, queue status, failed-task retry, latest Obsidian note, and configuration diagnostics.
 
 ## User Guide
 
@@ -123,7 +123,7 @@ After a successful upload:
 - Obsidian: the Markdown file appears in the configured vault folder.
 - The tray menu can open the latest Obsidian note directly.
 
-If an upload fails, it stays in the local queue and can be retried later. The upload center shows waiting and final-failed tasks.
+If an upload fails, it stays in the local queue and can be retried later. The upload center shows waiting and final-failed tasks; use "Retry failed tasks" to move final-failed tasks back into the queue.
 
 ## Troubleshooting
 
