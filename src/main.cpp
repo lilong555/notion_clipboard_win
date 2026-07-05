@@ -11,6 +11,7 @@
 #include "obsidian.h"
 #include "queue.h"
 #include "resource.h"
+#include "upload_center.h"
 #include "upload_target.h"
 #include "util.h"
 #include "win_util.h"
@@ -73,6 +74,7 @@ using ncw::RunDryRunText;
 using ncw::RunConfigPageSelfTest;
 using ncw::RunObsidianSelfTest;
 using ncw::RunSelfTest;
+using ncw::RunUploadCenterSelfTest;
 using ncw::RunUploadTargetSelfTest;
 using ncw::SetAutoStartEnabled;
 using ncw::Trim;
@@ -85,6 +87,7 @@ using ncw::Utf8ToWide;
 using ncw::ValidateConfigOrThrow;
 using ncw::WideToUtf8;
 using ncw::WriteConfigPage;
+using ncw::WriteUploadCenterPage;
 
 constexpr UINT_PTR kClipboardDebounceTimer = 1001;
 constexpr UINT kUploadHotkeyId = 2001;
@@ -1342,7 +1345,7 @@ private:
                     L"验证当前配置");
         AppendMenuW(menu, MF_STRING, kMenuOpenConfigDiagnostics, L"查看配置诊断");
         AppendMenuW(menu, MF_STRING, kMenuOpenConfig, L"打开配置文件");
-        AppendMenuW(menu, MF_STRING, kMenuOpenRecentUploads, L"查看最近上传结果");
+        AppendMenuW(menu, MF_STRING, kMenuOpenRecentUploads, L"打开上传中心");
         AppendMenuW(menu, MF_STRING | (fs::exists(LastObsidianUploadPath(*config_)) ? MF_ENABLED : MF_GRAYED),
                     kMenuOpenLastObsidian, L"打开最近 Obsidian 笔记");
         AppendMenuW(menu, MF_STRING, kMenuOpenLog, L"查看日志");
@@ -1392,7 +1395,7 @@ private:
             OpenConfigDiagnostics();
             break;
         case kMenuOpenRecentUploads:
-            OpenRecentUploadResults();
+            OpenUploadCenter();
             break;
         case kMenuOpenLastObsidian:
             OpenLastObsidianUpload();
@@ -1696,6 +1699,22 @@ private:
             }
         }
         OpenPath(path);
+    }
+
+    void OpenUploadCenter()
+    {
+        try
+        {
+            OpenPath(WriteUploadCenterPage(*config_));
+        }
+        catch (const std::exception &ex)
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Warn("创建上传中心失败: " + std::string(ex.what()));
+            }
+            ShowNotification(L"Notion Clipboard Win", L"创建上传中心失败，请查看日志。");
+        }
     }
 
     bool TryOpenShellTarget(const std::wstring &target)
@@ -2441,7 +2460,7 @@ int TestUploadUrlAndOpenReport(const std::string &url)
         Logger logger(config.state_dir / L"notion-clipboard-win.log", false);
         RunConfigTestUpload(config, &logger);
         std::filesystem::remove(temp_path, ignored);
-        OpenPathWithShell(RecentUploadResultsPath(config), "打开最近上传结果");
+        OpenPathWithShell(WriteUploadCenterPage(config), "打开上传中心");
     }
     catch (const std::exception &ex)
     {
@@ -2459,7 +2478,7 @@ int TestUploadUrlAndOpenReport(const std::string &url)
         job.id = "test-" + job.id;
         WriteRecentUploadResultReport(recent_path, job, false, ex.what());
         std::filesystem::remove(temp_path, ignored);
-        OpenPathWithShell(recent_path, "打开最近上传结果");
+        OpenPathWithShell(WriteUploadCenterPage(fallback_config), "打开上传中心");
     }
     return 0;
 }
@@ -2483,6 +2502,15 @@ int OpenRecentUploadsUrl(const std::string &url)
     WriteFileIfMissing(recent_path,
                        "# Recent Upload Results\n\n还没有上传结果。上传成功或失败后会在这里记录 Notion URL 和 Obsidian 文件路径。\n");
     OpenPathWithShell(recent_path, "打开最近上传结果");
+    return 0;
+}
+
+int OpenUploadCenterUrl(const std::string &url)
+{
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "上传中心");
+    const AppConfig config = LoadConfig(config_path);
+    const std::filesystem::path page_path = WriteUploadCenterPage(config);
+    OpenPathWithShell(page_path, "打开上传中心");
     return 0;
 }
 
@@ -2539,6 +2567,16 @@ int RunMainSelfTest()
             if (parsed.test_upload_url.empty())
             {
                 fail("test-upload protocol URL was not parsed");
+            }
+        }
+        {
+            wchar_t exe[] = L"notion_clipboard_win.exe";
+            wchar_t url[] = L"notion-clipboard-win:/open-upload-center/?path=C%3A%5CTemp%5Cnotion_clipboard_win.ini";
+            wchar_t *argv[] = {exe, url};
+            const CliOptions parsed = ParseCli(2, argv);
+            if (parsed.open_upload_center_url.empty())
+            {
+                fail("open-upload-center protocol URL was not parsed");
             }
         }
 
@@ -2764,6 +2802,10 @@ int AppMain(int argc, wchar_t **argv)
     {
         return OpenConfigDiagnosticsUrl(cli.open_config_diagnostics_url);
     }
+    if (!cli.open_upload_center_url.empty())
+    {
+        return OpenUploadCenterUrl(cli.open_upload_center_url);
+    }
     if (!cli.open_recent_uploads_url.empty())
     {
         return OpenRecentUploadsUrl(cli.open_recent_uploads_url);
@@ -2794,6 +2836,11 @@ int AppMain(int argc, wchar_t **argv)
         if (config_page_result != 0)
         {
             return config_page_result;
+        }
+        const int upload_center_result = RunUploadCenterSelfTest();
+        if (upload_center_result != 0)
+        {
+            return upload_center_result;
         }
         return RunMainSelfTest();
     }

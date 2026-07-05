@@ -39,6 +39,7 @@ add_executable(notion_clipboard_win
     src/logger.cpp
     src/obsidian.cpp
     src/queue.cpp
+    src/upload_center.cpp
     src/upload_target.cpp
     src/util.cpp
     src/win_util.cpp

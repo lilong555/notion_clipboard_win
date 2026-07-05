@@ -13,7 +13,7 @@ The project currently focuses on two stable targets: **Notion** and **Obsidian**
 - Convert Markdown, HTML, code blocks, tables, inline formulas, and display formulas.
 - Built-in local configuration page, so most users do not need to edit ini files by hand, including hotkey recording, validation, and test upload.
 - Failed uploads are queued locally and can be retried later.
-- Tray menu for recent upload results, latest Obsidian note, and configuration diagnostics.
+- Tray menu for the upload center, recent records, queue status, latest Obsidian note, and configuration diagnostics.
 
 ## User Guide
 
@@ -87,7 +87,7 @@ After editing, check it in this order:
 
 1. Click "Validate config" on the configuration page to check the Notion token, data source, Obsidian vault, and folder.
 2. If validation passes, click "Test upload". The app writes one real test item using the current page settings.
-3. Read the automatically opened "Recent upload results" file and confirm the Notion page link or Obsidian file path.
+3. Read the automatically opened upload center and confirm the Notion page link or Obsidian file path.
 4. When everything looks right, click "Apply and restart" to save the configuration.
 
 "Test upload" writes an item named `Notion Clipboard Win 测试上传`. It does not save the configuration to the ini file; only "Apply and restart" saves it.
@@ -111,7 +111,7 @@ Daily use takes three steps:
 
 1. Copy content from a browser, editor, chat window, or PDF.
 2. Press your configured upload hotkey. The default is `Ctrl+Shift+B`.
-3. Wait for the tray notification, or open "Recent upload results" from the tray menu.
+3. Wait for the tray notification, or open the upload center from the tray menu.
 
 You can also right-click the tray icon and choose "Upload current clipboard".
 
@@ -119,11 +119,11 @@ You can also right-click the tray icon and choose "Upload current clipboard".
 
 After a successful upload:
 
-- Notion: recent upload results include the Notion page link.
+- Notion: the upload center includes the Notion page link.
 - Obsidian: the Markdown file appears in the configured vault folder.
 - The tray menu can open the latest Obsidian note directly.
 
-If an upload fails, it stays in the local queue and can be retried later.
+If an upload fails, it stays in the local queue and can be retried later. The upload center shows waiting and final-failed tasks.
 
 ## Troubleshooting
 
