@@ -1969,6 +1969,31 @@ std::string NormalizeObsidianInlineMathLine(const std::string &line)
     return output;
 }
 
+struct QuoteLineParts
+{
+    std::string prefix;
+    std::string content;
+};
+
+std::optional<QuoteLineParts> SplitObsidianQuoteLine(const std::string &line)
+{
+    std::size_t pos = 0;
+    while (pos < line.size() && line[pos] == ' ')
+    {
+        ++pos;
+    }
+    if (pos >= line.size() || line[pos] != '>')
+    {
+        return std::nullopt;
+    }
+    ++pos;
+    if (pos < line.size() && line[pos] == ' ')
+    {
+        ++pos;
+    }
+    return QuoteLineParts{line.substr(0, pos), line.substr(pos)};
+}
+
 std::string JoinLinesPreserveFinalEmpty(const std::vector<std::string> &lines)
 {
     std::ostringstream output;
@@ -2010,6 +2035,49 @@ std::string NormalizeMarkdownForObsidian(const std::string &text)
         }
 
         const std::string trimmed = Trim(lines[i]);
+        if (const std::optional<QuoteLineParts> quote = SplitObsidianQuoteLine(lines[i]);
+            quote.has_value() && IsLooseBracketEquationFenceStart(Trim(quote->content)))
+        {
+            std::size_t cursor = i + 1;
+            std::string expression;
+            bool has_closing = false;
+            while (cursor < lines.size())
+            {
+                const std::optional<QuoteLineParts> current = SplitObsidianQuoteLine(lines[cursor]);
+                if (!current.has_value())
+                {
+                    break;
+                }
+                if (IsLooseBracketEquationFenceEnd(Trim(current->content)))
+                {
+                    has_closing = true;
+                    break;
+                }
+                if (!expression.empty())
+                {
+                    expression += "\n";
+                }
+                expression += current->content;
+                ++cursor;
+            }
+            if (has_closing && LooksLikeBlockLatexExpression(expression))
+            {
+                const std::string repaired = RepairLatexExpression(DedentBlockText(expression));
+                if (!repaired.empty())
+                {
+                    output.push_back(quote->prefix + "$$");
+                    const std::vector<std::string> repaired_lines = SplitLinesPreserveEmpty(repaired);
+                    for (const std::string &line : repaired_lines)
+                    {
+                        output.push_back(quote->prefix + line);
+                    }
+                    output.push_back(quote->prefix + "$$");
+                    i = cursor + 1;
+                    continue;
+                }
+            }
+        }
+
         if (IsLooseBracketEquationFenceStart(trimmed))
         {
             std::size_t cursor = i + 1;

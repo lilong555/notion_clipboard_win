@@ -1673,7 +1673,12 @@ int RunUploadTargetSelfTest()
                               "先算中点：\n\n"
                               "[\n"
                               "mid\n"
-                              "]\n",
+                              "]\n\n"
+                              "> 如果 DP 转移是\n"
+                              "> [\n"
+                              "> dp[i]=\\min_j{上一层dp[j]+cost(j,i)}\n"
+                              "> ]\n"
+                              "> 并且最优 (j) 随着 (i) 增大不下降，就可以用分治优化。\n",
                               obsidian_config.upload_target);
         bool obsidian_checkpointed = false;
         obsidian_target.ProcessJob(&obsidian_job, [&]
@@ -1702,9 +1707,14 @@ int RunUploadTargetSelfTest()
                 obsidian_written.find("$$\n[6,9]\n$$") == std::string::npos ||
                 obsidian_written.find("$$\nopt[t][i]\n$$") == std::string::npos ||
                 obsidian_written.find("$$\nmid\n$$") == std::string::npos ||
+                obsidian_written.find("> 如果 DP 转移是\n> $$\n> dp[i]=\\min_j{上一层dp[j]+cost(j,i)}\n> $$\n"
+                                      "> 并且最优 $j$ 随着 $i$ 增大不下降，就可以用分治优化。") ==
+                    std::string::npos ||
                 obsidian_written.find("\n[\nO(n\\log n)\n]") != std::string::npos ||
                 obsidian_written.find("\n[\n[6,9]\n]\n") != std::string::npos ||
                 obsidian_written.find("## 1. (opt[t][i]) 是什么？") != std::string::npos ||
+                obsidian_written.find("> [\n> dp[i]") != std::string::npos ||
+                obsidian_written.find("> ]\n> 并且") != std::string::npos ||
                 obsidian_written.find("source: notion_clipboard_win") != std::string::npos)
             {
                 fail("obsidian output did not normalize loose math for markdown");
