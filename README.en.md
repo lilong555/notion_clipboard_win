@@ -125,6 +125,8 @@ After a successful upload:
 
 If an upload fails, it stays in the local queue and can be retried later. The upload center shows waiting and final-failed tasks; use "Retry this item" for one task or "Retry failed tasks" to move all final-failed tasks back into the queue.
 
+The upload center is a local snapshot page. If it has been open for a while, click "Refresh status" to generate the latest view.
+
 ## Troubleshooting
 
 ### Configuration Changes Did Not Apply
