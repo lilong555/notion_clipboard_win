@@ -123,7 +123,7 @@ After a successful upload:
 - Obsidian: the Markdown file appears in the configured vault folder.
 - The tray menu can open the latest Obsidian note directly.
 
-If an upload fails, it stays in the local queue and can be retried later. The upload center shows waiting and final-failed tasks; use "Retry failed tasks" to move final-failed tasks back into the queue.
+If an upload fails, it stays in the local queue and can be retried later. The upload center shows waiting and final-failed tasks; use "Retry this item" for one task or "Retry failed tasks" to move all final-failed tasks back into the queue.
 
 ## Troubleshooting
 

@@ -76,6 +76,7 @@ using ncw::RunObsidianSelfTest;
 using ncw::RunSelfTest;
 using ncw::RunUploadCenterSelfTest;
 using ncw::RunUploadTargetSelfTest;
+using ncw::RetryFailedUpload;
 using ncw::RetryFailedUploads;
 using ncw::SetAutoStartEnabled;
 using ncw::Trim;
@@ -2545,6 +2546,26 @@ int RetryFailedUploadsUrlAndOpenCenter(const std::string &url)
     return 0;
 }
 
+int RetryFailedJobUrlAndOpenCenter(const std::string &url)
+{
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "重试失败任务");
+    const AppConfig config = LoadConfig(config_path);
+    const std::optional<std::string> file = QueryValue(url, "file");
+    if (!file.has_value())
+    {
+        throw std::runtime_error("重试失败任务 URL 缺少 file");
+    }
+
+    const std::size_t retried = RetryFailedUpload(config, *file);
+    if (retried > 0)
+    {
+        WakeRunningUploadWorker();
+    }
+    const std::filesystem::path page_path = WriteUploadCenterPage(config, config_path);
+    OpenPathWithShell(page_path, "打开上传中心");
+    return 0;
+}
+
 int RunMainSelfTest()
 {
     bool ok = true;
@@ -2618,6 +2639,17 @@ int RunMainSelfTest()
             if (parsed.retry_failed_uploads_url.empty())
             {
                 fail("retry-failed-uploads protocol URL was not parsed");
+            }
+        }
+        {
+            wchar_t exe[] = L"notion_clipboard_win.exe";
+            wchar_t url[] =
+                L"notion-clipboard-win:/retry-failed-job/?path=C%3A%5CTemp%5Cnotion_clipboard_win.ini&file=failed.job";
+            wchar_t *argv[] = {exe, url};
+            const CliOptions parsed = ParseCli(2, argv);
+            if (parsed.retry_failed_job_url.empty())
+            {
+                fail("retry-failed-job protocol URL was not parsed");
             }
         }
 
@@ -2846,6 +2878,10 @@ int AppMain(int argc, wchar_t **argv)
     if (!cli.open_upload_center_url.empty())
     {
         return OpenUploadCenterUrl(cli.open_upload_center_url);
+    }
+    if (!cli.retry_failed_job_url.empty())
+    {
+        return RetryFailedJobUrlAndOpenCenter(cli.retry_failed_job_url);
     }
     if (!cli.retry_failed_uploads_url.empty())
     {

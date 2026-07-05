@@ -79,6 +79,12 @@ std::string ProtocolUrl(const std::string &action, const fs::path &config_path)
            PercentEncodeQueryValue(WideToUtf8(config_path.wstring()));
 }
 
+std::string ProtocolUrlWithParam(const std::string &action, const fs::path &config_path, const std::string &key,
+                                 const std::string &value)
+{
+    return ProtocolUrl(action, config_path) + "&" + PercentEncodeQueryValue(key) + "=" + PercentEncodeQueryValue(value);
+}
+
 std::string HtmlEscape(const std::string &text)
 {
     std::string output;
@@ -520,6 +526,16 @@ fs::path UniqueQueuePath(const fs::path &queue_dir, const fs::path &source_path,
     return queue_dir / (Utf8ToWide(job_id) + L"-retry.job");
 }
 
+bool IsSafeJobFilename(const std::string &filename)
+{
+    if (Trim(filename).empty())
+    {
+        return false;
+    }
+    const fs::path path = fs::path(Utf8ToWide(filename));
+    return path.filename() == path && path.extension() == L".job";
+}
+
 std::string DisplayTime(std::uint64_t unix_ms)
 {
     return unix_ms == 0 ? "" : IsoUtcTimestampFromUnixMs(unix_ms);
@@ -550,6 +566,17 @@ void AppendOpenLink(std::ostringstream *html, const std::string &url, const std:
         return;
     }
     *html << "<a class=\"button\" href=\"" << HtmlEscape(url) << "\">" << HtmlEscape(label) << "</a>";
+}
+
+void AppendConfirmLink(std::ostringstream *html, const std::string &url, const std::string &label,
+                       const std::string &message)
+{
+    if (Trim(url).empty())
+    {
+        return;
+    }
+    *html << "<a class=\"button\" href=\"" << HtmlEscape(url) << "\" onclick=\"return confirm('"
+          << HtmlEscape(message) << "')\">" << HtmlEscape(label) << "</a>";
 }
 
 void AppendRecentTable(std::ostringstream *html, const std::vector<RecentRecord> &records)
@@ -589,7 +616,7 @@ void AppendRecentTable(std::ostringstream *html, const std::vector<RecentRecord>
     *html << "</tbody></table></div></section>";
 }
 
-void AppendQueueTable(std::ostringstream *html, const std::vector<QueueRecord> &records)
+void AppendQueueTable(std::ostringstream *html, const std::vector<QueueRecord> &records, const fs::path &config_path)
 {
     *html << "<section><div class=\"section-head\"><h2>队列</h2><span>" << records.size() << " 条</span></div>";
     if (records.empty())
@@ -616,6 +643,12 @@ void AppendQueueTable(std::ostringstream *html, const std::vector<QueueRecord> &
         *html << "</td><td>" << record.job.attempts << "</td><td class=\"error\">" << HtmlEscape(error)
               << "</td><td class=\"actions\">";
         AppendOpenLink(html, file_uri, "打开任务");
+        if (record.state == "最终失败" && record.load_error.empty())
+        {
+            const std::string file_name = WideToUtf8(record.path.filename().wstring());
+            AppendConfirmLink(html, ProtocolUrlWithParam("retry-failed-job", config_path, "file", file_name),
+                              "重试此项", "将这个任务移回等待队列并立即重试。继续吗？");
+        }
         AppendCopyButton(html, record.job.id, "复制 ID");
         *html << "</td></tr>";
     }
@@ -647,6 +680,28 @@ std::size_t RetryFailedUploads(const AppConfig &config)
         }
     }
     return retried;
+}
+
+std::size_t RetryFailedUpload(const AppConfig &config, const std::string &failed_job_filename)
+{
+    if (!IsSafeJobFilename(failed_job_filename))
+    {
+        return 0;
+    }
+
+    const fs::path failed_path = config.state_dir / L"failed" / fs::path(Utf8ToWide(failed_job_filename));
+    if (!fs::exists(failed_path) || !fs::is_regular_file(failed_path))
+    {
+        return 0;
+    }
+
+    fs::create_directories(config.state_dir / L"queue");
+    UploadJob job = JobFromJsonForCenter(ReadWholeFile(failed_path));
+    const fs::path queue_path = UniqueQueuePath(config.state_dir / L"queue", failed_path, job.id);
+    AtomicWriteFile(queue_path, JobToJsonForRetry(job));
+    std::error_code ignored;
+    fs::remove(failed_path, ignored);
+    return 1;
 }
 
 std::filesystem::path WriteUploadCenterPage(const AppConfig &config, const std::filesystem::path &config_path)
@@ -719,7 +774,7 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:8px;m
 )";
 
     AppendRecentTable(&html, recent_records);
-    AppendQueueTable(&html, queue_records);
+    AppendQueueTable(&html, queue_records, config_path);
 
     html << R"(
 </main>
@@ -788,13 +843,23 @@ int RunUploadCenterSelfTest()
                         "  \"content\":\"Failed Body\",\n"
                         "  \"last_error\":\"permanent error\"\n"
                         "}\n");
+        AtomicWriteFile(config.state_dir / L"failed" / L"failed-two.job",
+                        "{\n"
+                        "  \"id\":\"failed-two-job\",\n"
+                        "  \"created_at_ms\":1783209400000,\n"
+                        "  \"attempts\":2,\n"
+                        "  \"target\":\"notion\",\n"
+                        "  \"title\":\"Second Failed Queue Title\",\n"
+                        "  \"content\":\"Second Failed Body\",\n"
+                        "  \"last_error\":\"another permanent error\"\n"
+                        "}\n");
 
         const fs::path page = WriteUploadCenterPage(config, root / L"notion_clipboard_win.ini");
         const std::string html = ReadWholeFile(page);
         for (const char *needle : {"上传中心", "Upload Center Title", "https://www.notion.so/page", "vault missing",
                                    "Queued Title", "temporary error", "Failed Queue Title", "permanent error",
                                    "页面是打开时生成的本地快照", "data-copy=", "打开状态目录", "原始报告",
-                                   "retry-failed-uploads", "重试失败任务"})
+                                   "retry-failed-uploads", "重试失败任务", "retry-failed-job", "重试此项"})
         {
             if (html.find(needle) == std::string::npos)
             {
@@ -802,13 +867,32 @@ int RunUploadCenterSelfTest()
             }
         }
 
-        const std::size_t retried = RetryFailedUploads(config);
-        if (retried != 1 || !fs::exists(config.state_dir / L"queue" / L"failed.job") ||
-            fs::exists(config.state_dir / L"failed" / L"failed.job"))
+        if (RetryFailedUpload(config, "../failed.job") != 0)
         {
-            fail("retry failed uploads did not move failed job to queue");
+            fail("retry failed upload accepted unsafe filename");
         }
-        const std::string retried_job = ReadWholeFile(config.state_dir / L"queue" / L"failed.job");
+        const std::size_t single_retried = RetryFailedUpload(config, "failed.job");
+        if (single_retried != 1 || !fs::exists(config.state_dir / L"queue" / L"failed.job") ||
+            fs::exists(config.state_dir / L"failed" / L"failed.job") ||
+            !fs::exists(config.state_dir / L"failed" / L"failed-two.job"))
+        {
+            fail("retry failed upload did not move one failed job to queue");
+        }
+        const std::string single_retried_job = ReadWholeFile(config.state_dir / L"queue" / L"failed.job");
+        if (single_retried_job.find("\"attempts\":0") == std::string::npos ||
+            single_retried_job.find("\"not_before_ms\":0") == std::string::npos ||
+            single_retried_job.find("\"last_error\":\"\"") == std::string::npos)
+        {
+            fail("retry failed upload did not reset retry metadata");
+        }
+
+        const std::size_t retried = RetryFailedUploads(config);
+        if (retried != 1 || !fs::exists(config.state_dir / L"queue" / L"failed-two.job") ||
+            fs::exists(config.state_dir / L"failed" / L"failed-two.job"))
+        {
+            fail("retry failed uploads did not move remaining failed job to queue");
+        }
+        const std::string retried_job = ReadWholeFile(config.state_dir / L"queue" / L"failed-two.job");
         if (retried_job.find("\"attempts\":0") == std::string::npos ||
             retried_job.find("\"not_before_ms\":0") == std::string::npos ||
             retried_job.find("\"last_error\":\"\"") == std::string::npos)

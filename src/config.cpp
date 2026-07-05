@@ -275,6 +275,11 @@ bool IsRetryFailedUploadsProtocolUrl(const std::wstring &arg)
     return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"retry-failed-uploads") != std::wstring::npos;
 }
 
+bool IsRetryFailedJobProtocolUrl(const std::wstring &arg)
+{
+    return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"retry-failed-job") != std::wstring::npos;
+}
+
 bool IsOpenRecentUploadsProtocolUrl(const std::wstring &arg)
 {
     return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"open-recent-uploads") != std::wstring::npos;
@@ -480,6 +485,14 @@ CliOptions ParseCli(int argc, wchar_t **argv)
             }
             options.retry_failed_uploads_url = WideToUtf8(argv[++i]);
         }
+        else if (arg == L"--retry-failed-job-url")
+        {
+            if (i + 1 >= argc)
+            {
+                throw std::runtime_error("--retry-failed-job-url 缺少 URL");
+            }
+            options.retry_failed_job_url = WideToUtf8(argv[++i]);
+        }
         else if (arg == L"--open-recent-uploads-url")
         {
             if (i + 1 >= argc)
@@ -516,6 +529,10 @@ CliOptions ParseCli(int argc, wchar_t **argv)
         {
             options.retry_failed_uploads_url = WideToUtf8(arg);
         }
+        else if (IsRetryFailedJobProtocolUrl(arg))
+        {
+            options.retry_failed_job_url = WideToUtf8(arg);
+        }
         else if (IsOpenRecentUploadsProtocolUrl(arg))
         {
             options.open_recent_uploads_url = WideToUtf8(arg);
@@ -540,6 +557,7 @@ void PrintHelp()
               << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不上传\n\n"
               << "  notion_clipboard_win.exe --test-upload-url URL        使用配置页内容测试上传一次\n\n"
               << "  notion_clipboard_win.exe --open-upload-center-url URL 打开上传中心\n\n"
+              << "  notion_clipboard_win.exe --retry-failed-job-url URL   重试单个 failed 任务\n\n"
               << "  notion_clipboard_win.exe --retry-failed-uploads-url URL 重试 failed 队列任务\n\n"
               << "  notion_clipboard_win.exe --open-config-page-on-start  启动后打开配置页一次\n\n"
               << "默认热键:\n"
