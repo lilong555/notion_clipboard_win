@@ -30,11 +30,9 @@ struct AppConfig
     std::filesystem::path state_dir;
     std::string hotkey = "Ctrl+Shift+B";
     bool enable_hotkey = true;
-    bool enable_clipboard_listener = false;
     bool tray_notifications = true;
     bool start_with_windows = false;
     bool start_with_windows_configured = false;
-    int debounce_ms = 750;
     int duplicate_suppression_ms = 3000;
     bool upload_initial_clipboard = false;
     std::filesystem::path markdown_output_dir;

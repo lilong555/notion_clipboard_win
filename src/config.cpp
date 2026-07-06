@@ -171,10 +171,6 @@ void ApplyConfigValue(AppConfig *config, const std::string &key, const std::stri
     {
         config->enable_hotkey = ParseBool(trimmed_value);
     }
-    else if (normalized == "enable_clipboard_listener")
-    {
-        config->enable_clipboard_listener = ParseBool(trimmed_value);
-    }
     else if (normalized == "tray_notifications")
     {
         config->tray_notifications = ParseBool(trimmed_value);
@@ -183,10 +179,6 @@ void ApplyConfigValue(AppConfig *config, const std::string &key, const std::stri
     {
         config->start_with_windows = ParseBool(trimmed_value);
         config->start_with_windows_configured = true;
-    }
-    else if (normalized == "debounce_ms")
-    {
-        config->debounce_ms = std::max(100, ParseIntOrDefault(trimmed_value, 750));
     }
     else if (normalized == "duplicate_suppression_ms")
     {

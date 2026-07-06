@@ -92,7 +92,6 @@ using ncw::WideToUtf8;
 using ncw::WriteConfigPage;
 using ncw::WriteUploadCenterPage;
 
-constexpr UINT_PTR kClipboardDebounceTimer = 1001;
 constexpr UINT kUploadHotkeyId = 2001;
 constexpr UINT kTrayIconId = 1;
 constexpr UINT kTrayCallbackMessage = WM_APP + 1;
@@ -104,7 +103,6 @@ constexpr UINT kMenuToggleHotkey = 3003;
 constexpr UINT kMenuRecordHotkey = 3004;
 constexpr UINT kMenuToggleNotifications = 3005;
 constexpr UINT kMenuToggleAutoStart = 3006;
-constexpr UINT kMenuToggleClipboardListener = 3007;
 constexpr UINT kMenuOpenConfig = 3008;
 constexpr UINT kMenuOpenLog = 3009;
 constexpr UINT kMenuOpenStateDir = 3010;
@@ -957,8 +955,7 @@ public:
           hotkey_enabled_(config->enable_hotkey),
           notifications_enabled_(config->tray_notifications),
           auto_start_enabled_(config->start_with_windows),
-          auto_start_configured_(config->start_with_windows_configured),
-          clipboard_listener_enabled_(config->enable_clipboard_listener)
+          auto_start_configured_(config->start_with_windows_configured)
     {
         try
         {
@@ -1020,11 +1017,6 @@ public:
         {
             hotkey_enabled_ = RegisterUploadHotkey();
         }
-        if (clipboard_listener_enabled_)
-        {
-            EnableClipboardListener(true);
-        }
-
         if (startup_config_error_.empty() && config_->upload_initial_clipboard)
         {
             ProcessClipboard("启动读取", false);
@@ -1032,8 +1024,7 @@ public:
 
         if (logger_ != nullptr)
         {
-            logger_->Info("托盘进程已启动，hotkey=" + hotkey_spec_.display +
-                          "，clipboard_listener=" + (clipboard_listener_registered_ ? "on" : "off"));
+            logger_->Info("托盘进程已启动，hotkey=" + hotkey_spec_.display);
         }
         ShowNotification(L"Notion Clipboard Win", L"后台进程已启动，按 " + Utf8ToWide(hotkey_spec_.display) + L" 上传剪贴板。");
         const bool opened_config_page_on_start = MaybeOpenConfigPageOnStart();
@@ -1150,19 +1141,6 @@ private:
             if (worker_ != nullptr)
             {
                 worker_->Notify();
-            }
-            return 0;
-        case WM_CLIPBOARDUPDATE:
-            if (clipboard_listener_registered_)
-            {
-                SetTimer(hwnd, kClipboardDebounceTimer, static_cast<UINT>(config_->debounce_ms), nullptr);
-            }
-            return 0;
-        case WM_TIMER:
-            if (wparam == kClipboardDebounceTimer)
-            {
-                KillTimer(hwnd, kClipboardDebounceTimer);
-                ProcessClipboard("剪贴板事件", false);
             }
             return 0;
         case WM_CLOSE:
@@ -1318,49 +1296,6 @@ private:
         return true;
     }
 
-    void EnableClipboardListener(bool enabled)
-    {
-        if (hwnd_ == nullptr)
-        {
-            return;
-        }
-
-        if (enabled && !clipboard_listener_registered_)
-        {
-            if (!AddClipboardFormatListener(hwnd_))
-            {
-                if (logger_ != nullptr)
-                {
-                    logger_->Error("注册剪贴板监听失败: " + LastErrorMessage());
-                }
-                ShowNotification(L"Notion Clipboard Win", L"注册剪贴板监听失败。");
-                clipboard_listener_enabled_ = false;
-                return;
-            }
-            clipboard_listener_registered_ = true;
-            clipboard_listener_enabled_ = true;
-            if (logger_ != nullptr)
-            {
-                logger_->Info("剪贴板监听已启动");
-            }
-        }
-        else if (!enabled && clipboard_listener_registered_)
-        {
-            RemoveClipboardFormatListener(hwnd_);
-            clipboard_listener_registered_ = false;
-            clipboard_listener_enabled_ = false;
-            KillTimer(hwnd_, kClipboardDebounceTimer);
-            if (logger_ != nullptr)
-            {
-                logger_->Info("剪贴板监听已停止");
-            }
-        }
-        else
-        {
-            clipboard_listener_enabled_ = enabled;
-        }
-    }
-
     void ShowContextMenu()
     {
         HMENU menu = CreatePopupMenu();
@@ -1379,8 +1314,6 @@ private:
                     L"显示通知");
         AppendMenuW(menu, MF_STRING | (auto_start_enabled_ ? MF_CHECKED : MF_UNCHECKED), kMenuToggleAutoStart,
                     L"开机自动启动");
-        AppendMenuW(menu, MF_STRING | (clipboard_listener_enabled_ ? MF_CHECKED : MF_UNCHECKED),
-                    kMenuToggleClipboardListener, L"自动监听剪贴板");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING, kMenuOpenConfigPage, L"打开配置页面");
         AppendMenuW(menu, MF_STRING, kMenuOpenRecentUploads, L"打开上传中心");
@@ -1418,9 +1351,6 @@ private:
             break;
         case kMenuToggleAutoStart:
             ToggleAutoStart();
-            break;
-        case kMenuToggleClipboardListener:
-            EnableClipboardListener(!clipboard_listener_enabled_);
             break;
         case kMenuOpenConfig:
             OpenConfig();
@@ -1690,7 +1620,6 @@ private:
                                              "database_id=\n"
                                              "hotkey=Ctrl+Shift+B\n"
                                              "enable_hotkey=true\n"
-                                             "enable_clipboard_listener=false\n"
                                              "tray_notifications=true\n"
                                              "start_with_windows=false\n");
             }
@@ -2061,11 +1990,6 @@ private:
 
         if (hwnd_ != nullptr)
         {
-            if (clipboard_listener_registered_)
-            {
-                RemoveClipboardFormatListener(hwnd_);
-                clipboard_listener_registered_ = false;
-            }
             if (hotkey_registered_)
             {
                 UnregisterHotKey(hwnd_, kUploadHotkeyId);
@@ -2111,8 +2035,6 @@ private:
     bool notifications_enabled_ = true;
     bool auto_start_enabled_ = false;
     bool auto_start_configured_ = false;
-    bool clipboard_listener_enabled_ = false;
-    bool clipboard_listener_registered_ = false;
     bool tray_icon_added_ = false;
     std::atomic<bool> cleaned_up_{false};
     std::atomic<bool> diagnostics_running_{false};
