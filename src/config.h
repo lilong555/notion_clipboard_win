@@ -58,7 +58,6 @@ struct CliOptions
     std::string open_config_page_url;
     std::string validate_config_url;
     std::string test_upload_url;
-    std::string preview_obsidian_clipboard_url;
     std::string open_config_diagnostics_url;
     std::string open_upload_center_url;
     std::string retry_failed_job_url;

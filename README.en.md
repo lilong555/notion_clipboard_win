@@ -115,9 +115,6 @@ Daily use takes three steps:
 
 You can also right-click the tray icon and choose "Upload current clipboard".
 
-To inspect the Obsidian Markdown first, copy the content, right-click the tray icon, and choose "Preview Obsidian Markdown". The app writes and opens a local preview file without uploading to Notion or writing to your Obsidian vault.
-The configuration page has the same "Preview Obsidian Markdown" action and uses the Obsidian tags currently shown on the page.
-
 ### 9. Check The Result
 
 After a successful upload:
@@ -161,7 +158,7 @@ Notion highlighting depends on the code block language. The app tries to detect 
 
 ### Formulas Do Not Render As Expected
 
-The app supports common `$...$`, `$$...$$`, `\(...\)`, and `\[...\]` formulas. For unusual source text, use "Preview Obsidian Markdown" from the tray menu first; for development debugging, add the sample to `test/` and run a dry run.
+The app supports common `$...$`, `$$...$$`, `\(...\)`, and `\[...\]` formulas. For unusual source text during development, add the sample to `test/` and run a dry run.
 
 ## Manual Configuration Examples
 

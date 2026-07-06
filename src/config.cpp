@@ -252,12 +252,6 @@ bool IsTestUploadProtocolUrl(const std::wstring &arg)
     return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"test-upload") != std::wstring::npos;
 }
 
-bool IsPreviewObsidianClipboardProtocolUrl(const std::wstring &arg)
-{
-    return arg.rfind(L"notion-clipboard-win:", 0) == 0 &&
-           arg.find(L"preview-obsidian-clipboard") != std::wstring::npos;
-}
-
 bool IsOpenConfigDiagnosticsProtocolUrl(const std::wstring &arg)
 {
     return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"open-config-diagnostics") != std::wstring::npos;
@@ -468,14 +462,6 @@ CliOptions ParseCli(int argc, wchar_t **argv)
             }
             options.test_upload_url = WideToUtf8(argv[++i]);
         }
-        else if (arg == L"--preview-obsidian-clipboard-url")
-        {
-            if (i + 1 >= argc)
-            {
-                throw std::runtime_error("--preview-obsidian-clipboard-url 缺少 URL");
-            }
-            options.preview_obsidian_clipboard_url = WideToUtf8(argv[++i]);
-        }
         else if (arg == L"--open-config-diagnostics-url")
         {
             if (i + 1 >= argc)
@@ -532,10 +518,6 @@ CliOptions ParseCli(int argc, wchar_t **argv)
         {
             options.test_upload_url = WideToUtf8(arg);
         }
-        else if (IsPreviewObsidianClipboardProtocolUrl(arg))
-        {
-            options.preview_obsidian_clipboard_url = WideToUtf8(arg);
-        }
         else if (IsOpenConfigDiagnosticsProtocolUrl(arg))
         {
             options.open_config_diagnostics_url = WideToUtf8(arg);
@@ -576,7 +558,6 @@ void PrintHelp()
               << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不上传\n\n"
               << "  notion_clipboard_win.exe --dry-run-obsidian-file in out 生成 Obsidian Markdown 预览\n\n"
               << "  notion_clipboard_win.exe --test-upload-url URL        使用配置页内容测试上传一次\n\n"
-              << "  notion_clipboard_win.exe --preview-obsidian-clipboard-url URL 预览剪贴板 Obsidian Markdown\n\n"
               << "  notion_clipboard_win.exe --open-upload-center-url URL 打开上传中心\n\n"
               << "  notion_clipboard_win.exe --retry-failed-job-url URL   重试单个 failed 任务\n\n"
               << "  notion_clipboard_win.exe --retry-failed-uploads-url URL 重试 failed 队列任务\n\n"
