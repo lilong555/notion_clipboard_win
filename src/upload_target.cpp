@@ -1620,8 +1620,10 @@ int RunUploadTargetSelfTest()
         else
         {
             const std::string written = ReadWholeFile(output_path);
-            if (written.find("# 测试标题") == std::string::npos || written.find("正文 $x$。") == std::string::npos ||
-                written.find("job_id: " + job.id) == std::string::npos)
+            if (written.find("# 测试标题\n\n<!-- source: notion_clipboard_win; job_id: ") != 0 ||
+                written.find("job_id: " + job.id) == std::string::npos ||
+                written.find("-->\n\n正文 $x$。") == std::string::npos ||
+                written.find("-->\n\n测试标题") != std::string::npos)
             {
                 fail("markdown_file output content mismatch");
             }
