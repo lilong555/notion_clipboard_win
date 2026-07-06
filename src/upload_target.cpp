@@ -131,6 +131,73 @@ std::string BuildObsidianFrontMatter(const std::vector<std::string> &tags)
     return content.str();
 }
 
+std::string DuplicateTitleCandidate(std::string line)
+{
+    line = Trim(std::move(line));
+    std::size_t hashes = 0;
+    while (hashes < line.size() && line[hashes] == '#')
+    {
+        ++hashes;
+    }
+    if (hashes > 0 && hashes <= 6 && hashes < line.size() &&
+        std::isspace(static_cast<unsigned char>(line[hashes])))
+    {
+        line = Trim(line.substr(hashes + 1));
+        while (!line.empty() && line.back() == '#')
+        {
+            line.pop_back();
+        }
+        line = Trim(line);
+    }
+    return CollapseWhitespace(line);
+}
+
+std::string StripLeadingDuplicateTitleLine(const std::string &body, const std::string &title)
+{
+    const std::string expected = CollapseWhitespace(title);
+    if (expected.empty())
+    {
+        return body;
+    }
+
+    std::size_t line_begin = 0;
+    while (line_begin <= body.size())
+    {
+        const std::size_t line_end = body.find('\n', line_begin);
+        const std::string line = body.substr(line_begin, line_end == std::string::npos ? std::string::npos
+                                                                                       : line_end - line_begin);
+        if (Trim(line).empty())
+        {
+            if (line_end == std::string::npos)
+            {
+                return "";
+            }
+            line_begin = line_end + 1;
+            continue;
+        }
+
+        if (DuplicateTitleCandidate(line) != expected)
+        {
+            return body;
+        }
+
+        std::size_t rest_begin = line_end == std::string::npos ? body.size() : line_end + 1;
+        while (rest_begin < body.size())
+        {
+            const std::size_t rest_end = body.find('\n', rest_begin);
+            const std::string rest_line = body.substr(rest_begin, rest_end == std::string::npos ? std::string::npos
+                                                                                                : rest_end - rest_begin);
+            if (!Trim(rest_line).empty())
+            {
+                break;
+            }
+            rest_begin = rest_end == std::string::npos ? body.size() : rest_end + 1;
+        }
+        return body.substr(rest_begin);
+    }
+    return body;
+}
+
 std::string BuildMarkdownDocument(const UploadJob &job, bool normalize_for_obsidian = false,
                                   bool include_source_comment = true,
                                   const std::vector<std::string> &obsidian_tags = {})
@@ -145,8 +212,9 @@ std::string BuildMarkdownDocument(const UploadJob &job, bool normalize_for_obsid
     }
     const std::string body =
         normalize_for_obsidian ? NormalizeMarkdownForObsidian(job.content) : NormalizeLineEndings(job.content);
-    content << body;
-    if (body.empty() || body.back() != '\n')
+    const std::string body_without_duplicate_title = StripLeadingDuplicateTitleLine(body, job.title);
+    content << body_without_duplicate_title;
+    if (body_without_duplicate_title.empty() || body_without_duplicate_title.back() != '\n')
     {
         content << "\n";
     }
@@ -1702,7 +1770,7 @@ int RunUploadTargetSelfTest()
             {
                 fail("obsidian filename should use the clean note title");
             }
-            if (obsidian_written.find("---\ntags:\n  - \"算法\"\n  - \"cpp\"\n  - \"daily/note\"\n---\n\n# Obsidian 标题") != 0 ||
+            if (obsidian_written.find("---\ntags:\n  - \"算法\"\n  - \"cpp\"\n  - \"daily/note\"\n---\n\n# Obsidian 标题\n\n每列选 $k$ 个。") != 0 ||
                 obsidian_written.find("每列选 $k$ 个。") == std::string::npos ||
                 obsidian_written.find("$$\n{1}\\quad \\text{或}\\quad {1,2}\n$$") == std::string::npos ||
                 obsidian_written.find("$$\nO(n\\log n)\n$$") == std::string::npos ||
@@ -1721,6 +1789,7 @@ int RunUploadTargetSelfTest()
                 obsidian_written.find("## 1. (opt[t][i]) 是什么？") != std::string::npos ||
                 obsidian_written.find("> [\n> dp[i]") != std::string::npos ||
                 obsidian_written.find("> ]\n> 并且") != std::string::npos ||
+                obsidian_written.find("# Obsidian 标题\n\nObsidian 标题") != std::string::npos ||
                 obsidian_written.find("source: notion_clipboard_win") != std::string::npos)
             {
                 fail("obsidian output did not normalize loose math for markdown");

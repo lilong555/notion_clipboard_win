@@ -2751,8 +2751,9 @@ int RunMainSelfTest()
                             "> ]\n");
             RunObsidianDryRunFile(input_path, output_path, "#算法 cpp", true);
             const std::string preview = ReadWholeFile(output_path);
-            if (preview.find("---\ntags:\n  - \"算法\"\n  - \"cpp\"\n---\n\n# 预览标题") != 0 ||
-                preview.find("> $$\n> dp[i]=\\min_j{上一层dp[j]+cost(j,i)}\n> $$") == std::string::npos)
+            if (preview.find("---\ntags:\n  - \"算法\"\n  - \"cpp\"\n---\n\n# 预览标题\n\n> 如果 DP 转移是") != 0 ||
+                preview.find("> $$\n> dp[i]=\\min_j{上一层dp[j]+cost(j,i)}\n> $$") == std::string::npos ||
+                preview.find("# 预览标题\n\n预览标题") != std::string::npos)
             {
                 fail("dry-run-obsidian-file did not write full Obsidian preview");
             }
