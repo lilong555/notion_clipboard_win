@@ -158,7 +158,7 @@ Notion 的代码高亮依赖代码块语言。程序会尽量识别 `cpp`、`sql
 
 ### 公式没有按预期显示
 
-程序支持常见的 `$...$`、`$$...$$`、`\(...\)`、`\[...\]`。如果原文格式很松散，开发调试时可以把问题样例放到 `test/` 后运行 dry run。
+程序支持常见的 `$...$`、`$$...$$`、`\(...\)`、`\[...\]`。如果保存结果不对，先用配置页面的“测试保存”复现；保存记录会显示目标位置和失败原因。反馈问题时，建议附上原文样例，并说明目标是 Notion 还是 Obsidian。
 
 ## 手动配置示例
 
@@ -222,10 +222,4 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps
 
 ```powershell
 .\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
-```
-
-生成 Obsidian Markdown 调试文件，用来检查公式、引用块和标签 front matter：
-
-```powershell
-.\build-console\Release\notion_clipboard_win.exe --dry-run-obsidian-file .\test\bf.txt .\test\bf.obsidian.md
 ```

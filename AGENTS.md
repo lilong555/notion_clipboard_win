@@ -19,6 +19,12 @@
 - 生成安装包：
   - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1`
 
+## 测试
+
+- 转换回归：`.\build-console\Release\notion_clipboard_win.exe --self-test`
+- 通用 dry run：`.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt`
+- Obsidian 调试输出：`.\build-console\Release\notion_clipboard_win.exe --dry-run-obsidian-file .\test\bf.txt .\test\bf.obsidian.md`
+
 ## 安全
 
 - 不要提交真实 Notion token、数据库 ID 或本地配置文件。

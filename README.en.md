@@ -158,7 +158,7 @@ Notion highlighting depends on the code block language. The app tries to detect 
 
 ### Formulas Do Not Render As Expected
 
-The app supports common `$...$`, `$$...$$`, `\(...\)`, and `\[...\]` formulas. For unusual source text during development, add the sample to `test/` and run a dry run.
+The app supports common `$...$`, `$$...$$`, `\(...\)`, and `\[...\]` formulas. If the saved result looks wrong, reproduce it with "Test save" on the configuration page; save records show the target and failure reason. When reporting an issue, include the source text and whether the target is Notion or Obsidian.
 
 ## Manual Configuration Examples
 
@@ -222,10 +222,4 @@ Dry-run conversion:
 
 ```powershell
 .\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
-```
-
-Generate an Obsidian Markdown debug file to inspect formulas, blockquotes, and tag front matter:
-
-```powershell
-.\build-console\Release\notion_clipboard_win.exe --dry-run-obsidian-file .\test\bf.txt .\test\bf.obsidian.md
 ```
