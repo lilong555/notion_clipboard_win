@@ -512,10 +512,10 @@ UploadJob MakeUploadJob(const std::string &content, const std::string &target)
 std::string BuildConfigTestUploadContent(const AppConfig &config)
 {
     std::ostringstream content;
-    content << "Notion Clipboard Win 测试上传\n\n"
-            << "这是一条由配置页面发出的测试内容，用来确认当前上传目标可以正常写入。\n\n"
+    content << "Notion Clipboard Win 测试保存\n\n"
+            << "这是一条由配置页面发出的测试内容，用来确认当前保存位置可以正常写入。\n\n"
             << "- 时间: " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
-            << "- 上传目标: " << ReportLineValue(config.upload_target) << "\n\n"
+            << "- 保存位置: " << ReportLineValue(config.upload_target) << "\n\n"
             << "行内公式测试：$a+b=c$。\n\n"
             << "```cpp\n"
             << "int main() {\n"
@@ -557,7 +557,7 @@ bool RunConfigTestUpload(const AppConfig &config, Logger *logger)
             WriteLastObsidianUploadState(LastObsidianUploadPath(config), job);
             if (logger != nullptr)
             {
-                logger->Info("测试上传成功: [" + target_name + "] " + job.id +
+                logger->Info("测试保存成功: [" + target_name + "] " + job.id +
                              (job.remote_url.empty() ? "" : " -> " + job.remote_url));
             }
         }
@@ -568,7 +568,7 @@ bool RunConfigTestUpload(const AppConfig &config, Logger *logger)
             WriteRecentUploadResultReport(recent_path, job, false, ex.what());
             if (logger != nullptr)
             {
-                logger->Warn("测试上传失败: [" + target_name + "] " + std::string(ex.what()));
+                logger->Warn("测试保存失败: [" + target_name + "] " + std::string(ex.what()));
             }
         }
         catch (const std::exception &ex)
@@ -578,7 +578,7 @@ bool RunConfigTestUpload(const AppConfig &config, Logger *logger)
             WriteRecentUploadResultReport(recent_path, job, false, ex.what());
             if (logger != nullptr)
             {
-                logger->Warn("测试上传失败: [" + target_name + "] " + std::string(ex.what()));
+                logger->Warn("测试保存失败: [" + target_name + "] " + std::string(ex.what()));
             }
         }
     }
@@ -1191,7 +1191,7 @@ private:
         {
             if (logger_ != nullptr)
             {
-                logger_->Warn("写入最近上传结果失败: " + std::string(ex.what()));
+                logger_->Warn("写入最近保存结果失败: " + std::string(ex.what()));
             }
         }
 
@@ -1282,7 +1282,7 @@ private:
                     L"开机自动启动");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING, kMenuOpenConfigPage, L"打开配置页面");
-        AppendMenuW(menu, MF_STRING, kMenuOpenRecentUploads, L"打开上传中心");
+        AppendMenuW(menu, MF_STRING, kMenuOpenRecentUploads, L"打开保存记录");
         AppendMenuW(menu, MF_STRING | (fs::exists(LastObsidianUploadPath(*config_)) ? MF_ENABLED : MF_GRAYED),
                     kMenuOpenLastObsidian, L"打开最近 Obsidian 笔记");
         AppendMenuW(menu, MF_STRING, kMenuOpenLog, L"查看日志");
@@ -1620,13 +1620,13 @@ private:
         {
             try
             {
-                AtomicWriteFile(path, "# Recent Upload Results\n\n还没有上传结果。上传成功或失败后会在这里记录 Notion URL 和 Obsidian 文件路径。\n");
+                AtomicWriteFile(path, "# Recent Save Results\n\n还没有保存结果。保存成功或失败后会在这里记录 Notion URL 和 Obsidian 文件路径。\n");
             }
             catch (const std::exception &ex)
             {
                 if (logger_ != nullptr)
                 {
-                    logger_->Warn("创建最近上传结果文件失败: " + std::string(ex.what()));
+                    logger_->Warn("创建最近保存结果文件失败: " + std::string(ex.what()));
                 }
             }
         }
@@ -1643,9 +1643,9 @@ private:
         {
             if (logger_ != nullptr)
             {
-                logger_->Warn("创建上传中心失败: " + std::string(ex.what()));
+                logger_->Warn("创建保存记录失败: " + std::string(ex.what()));
             }
-            ShowNotification(L"Notion Clipboard Win", L"创建上传中心失败，请查看日志。");
+            ShowNotification(L"Notion Clipboard Win", L"创建保存记录失败，请查看日志。");
         }
     }
 
@@ -1677,7 +1677,7 @@ private:
             }
             if (!opened)
             {
-                ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Obsidian 笔记，请查看最近上传结果。");
+                ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Obsidian 笔记，请查看保存记录。");
                 OpenRecentUploadResults();
             }
         }
@@ -1687,7 +1687,7 @@ private:
             {
                 logger_->Warn("打开最近 Obsidian 笔记失败: " + std::string(ex.what()));
             }
-            ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Obsidian 笔记，请查看最近上传结果。");
+            ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Obsidian 笔记，请查看保存记录。");
             OpenRecentUploadResults();
         }
     }
@@ -1807,7 +1807,7 @@ private:
         ShowNotification(L"Notion Clipboard Win",
                          config_page_already_opened ? L"配置尚未完成，已打开配置页面。"
                                                     : L"配置尚未完成，请从托盘菜单打开配置页面。");
-        MessageBoxW(hwnd_, (L"配置尚未完成，上传功能暂不可用。\n\n" + Utf8ToWide(startup_config_error_) +
+        MessageBoxW(hwnd_, (L"配置尚未完成，保存功能暂不可用。\n\n" + Utf8ToWide(startup_config_error_) +
                                 (config_page_already_opened
                                      ? L"\n\n请在已打开的配置页面填写必要项，然后点击“应用并重启”。"
                                      : L"\n\n请从托盘菜单打开配置页面，填写必要项后点击“应用并重启”。"))
@@ -1835,7 +1835,7 @@ private:
         {
             if (logger_ != nullptr)
             {
-                logger_->Warn(std::string(trigger) + "上传被跳过，配置尚未完成: " + startup_config_error_);
+                logger_->Warn(std::string(trigger) + "保存被跳过，配置尚未完成: " + startup_config_error_);
             }
             if (user_initiated)
             {
@@ -1849,7 +1849,7 @@ private:
         {
             if (user_initiated)
             {
-                ShowNotification(L"Notion Clipboard Win", L"当前剪贴板没有可上传的文本。");
+                ShowNotification(L"Notion Clipboard Win", L"当前剪贴板没有可保存的文本。");
             }
             return;
         }
@@ -1859,7 +1859,7 @@ private:
         {
             if (logger_ != nullptr)
             {
-                logger_->Warn(std::string(trigger) + "上传被跳过，upload_target 为空");
+                logger_->Warn(std::string(trigger) + "保存被跳过，upload_target 为空");
             }
             return;
         }
@@ -1902,7 +1902,7 @@ private:
         }
         if (user_initiated)
         {
-            ShowNotification(L"Notion Clipboard Win", L"剪贴板内容已加入上传队列：" + JoinTargetDisplayNames(targets) + L"。");
+            ShowNotification(L"Notion Clipboard Win", L"剪贴板内容已加入保存队列：" + JoinTargetDisplayNames(targets) + L"。");
         }
     }
 
@@ -2008,7 +2008,7 @@ int RunOnce(const AppConfig &config, PersistentQueue *queue, UploadTarget *targe
     const auto text = reader.ReadText(logger, config.max_clipboard_bytes);
     if (!text.has_value())
     {
-        throw std::runtime_error("当前剪贴板没有可上传的文本");
+        throw std::runtime_error("当前剪贴板没有可保存的文本");
     }
 
     UploadJob job = MakeUploadJob(*text, config.upload_target);
@@ -2383,7 +2383,7 @@ int ValidateConfigUrlAndOpenReport(const std::string &url)
 
 int TestUploadUrlAndOpenReport(const std::string &url)
 {
-    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "测试上传");
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "测试保存");
     std::filesystem::path temp_path;
     std::error_code ignored;
 
@@ -2394,7 +2394,7 @@ int TestUploadUrlAndOpenReport(const std::string &url)
         Logger logger(config.state_dir / L"notion-clipboard-win.log", false);
         RunConfigTestUpload(config, &logger);
         std::filesystem::remove(temp_path, ignored);
-        OpenPathWithShell(WriteUploadCenterPage(config, config_path), "打开上传中心");
+        OpenPathWithShell(WriteUploadCenterPage(config, config_path), "打开保存记录");
     }
     catch (const std::exception &ex)
     {
@@ -2412,7 +2412,7 @@ int TestUploadUrlAndOpenReport(const std::string &url)
         job.id = "test-" + job.id;
         WriteRecentUploadResultReport(recent_path, job, false, ex.what());
         std::filesystem::remove(temp_path, ignored);
-        OpenPathWithShell(WriteUploadCenterPage(fallback_config, config_path), "打开上传中心");
+        OpenPathWithShell(WriteUploadCenterPage(fallback_config, config_path), "打开保存记录");
     }
     return 0;
 }
@@ -2430,21 +2430,21 @@ int OpenConfigDiagnosticsUrl(const std::string &url)
 
 int OpenRecentUploadsUrl(const std::string &url)
 {
-    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "最近上传结果");
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "最近保存结果");
     const AppConfig config = LoadConfig(config_path);
     const std::filesystem::path recent_path = RecentUploadResultsPath(config);
     WriteFileIfMissing(recent_path,
-                       "# Recent Upload Results\n\n还没有上传结果。上传成功或失败后会在这里记录 Notion URL 和 Obsidian 文件路径。\n");
-    OpenPathWithShell(recent_path, "打开最近上传结果");
+                       "# Recent Save Results\n\n还没有保存结果。保存成功或失败后会在这里记录 Notion URL 和 Obsidian 文件路径。\n");
+    OpenPathWithShell(recent_path, "打开最近保存结果");
     return 0;
 }
 
 int OpenUploadCenterUrl(const std::string &url)
 {
-    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "上传中心");
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "保存记录");
     const AppConfig config = LoadConfig(config_path);
     const std::filesystem::path page_path = WriteUploadCenterPage(config, config_path);
-    OpenPathWithShell(page_path, "打开上传中心");
+    OpenPathWithShell(page_path, "打开保存记录");
     return 0;
 }
 
@@ -2458,7 +2458,7 @@ int RetryFailedUploadsUrlAndOpenCenter(const std::string &url)
         WakeRunningUploadWorker();
     }
     const std::filesystem::path page_path = WriteUploadCenterPage(config, config_path);
-    OpenPathWithShell(page_path, "打开上传中心");
+    OpenPathWithShell(page_path, "打开保存记录");
     return 0;
 }
 
@@ -2478,7 +2478,7 @@ int RetryFailedJobUrlAndOpenCenter(const std::string &url)
         WakeRunningUploadWorker();
     }
     const std::filesystem::path page_path = WriteUploadCenterPage(config, config_path);
-    OpenPathWithShell(page_path, "打开上传中心");
+    OpenPathWithShell(page_path, "打开保存记录");
     return 0;
 }
 
@@ -2779,7 +2779,7 @@ int RunMainSelfTest()
         }
         if (!test_upload_ok || !test_upload_file_found ||
             test_upload_report.find("SUCCESS - obsidian") == std::string::npos ||
-            test_upload_report.find("Notion Clipboard Win 测试上传") == std::string::npos)
+            test_upload_report.find("Notion Clipboard Win 测试保存") == std::string::npos)
         {
             fail("configuration test upload did not write obsidian result");
         }

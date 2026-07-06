@@ -8,12 +8,12 @@ The project currently focuses on two stable targets: **Notion** and **Obsidian**
 
 ## Features
 
-- Upload the current clipboard with the default `Ctrl+Shift+B` hotkey.
+- Save the current clipboard with the default `Ctrl+Shift+B` hotkey.
 - Write to Notion, Obsidian, or both at the same time.
 - Convert Markdown, HTML, code blocks, tables, inline formulas, and display formulas.
-- Built-in local configuration page, so most users do not need to edit ini files by hand, including hotkey recording and test upload.
-- Failed uploads are queued locally and can be retried later.
-- Tray menu for uploading the current clipboard, opening the upload center, viewing logs, and opening the latest Obsidian note.
+- Built-in local configuration page, so most users do not need to edit ini files by hand, including hotkey recording and test save.
+- Failed saves are queued locally and can be retried later.
+- Tray menu for saving the current clipboard, opening save records, viewing logs, and opening the latest Obsidian note.
 
 ## User Guide
 
@@ -54,7 +54,7 @@ upload_target=notion,obsidian
 
 ### 4. Configure Notion
 
-To upload to Notion, you need:
+To save to Notion, you need:
 
 - `Notion Token`
 - `Data Source ID`
@@ -71,7 +71,7 @@ The target database must have at least one title property. Other properties are 
 
 ### 5. Configure Obsidian
 
-To upload to Obsidian, choose a vault:
+To save to Obsidian, choose a vault:
 
 1. Find `Obsidian Vault` on the configuration page.
 2. Select a detected vault, or manually enter the vault folder path.
@@ -81,20 +81,20 @@ To upload to Obsidian, choose a vault:
 
 Obsidian files use the detected content title as the filename when possible. If a file with the same name already exists, the app adds a numeric suffix instead of overwriting it.
 
-### 6. Test Upload And Apply
+### 6. Test Save And Apply
 
 After editing, check it in this order:
 
-1. Click "Test upload" on the configuration page. The app writes one real test item using the current page settings.
-2. Read the automatically opened upload center and confirm the Notion page link or Obsidian file path.
-3. If the test fails, fix the settings using the upload center error and try again.
+1. Click "Test save" on the configuration page. The app writes one real test item using the current page settings.
+2. Read the automatically opened save records page and confirm the Notion page link or Obsidian file path.
+3. If the test fails, fix the settings using the save records error and try again.
 4. When everything looks right, click "Apply and restart" to save the configuration.
 
-"Test upload" writes an item named `Notion Clipboard Win 测试上传`. It does not save the configuration to the ini file; only "Apply and restart" saves it.
+"Test save" writes an item named `Notion Clipboard Win 测试保存`. It does not save the configuration to the ini file; only "Apply and restart" saves it.
 
 ### 7. Change The Hotkey
 
-The default upload hotkey is `Ctrl+Shift+B`. If it conflicts with another app, change it from the configuration page:
+The default save hotkey is `Ctrl+Shift+B`. If it conflicts with another app, change it from the configuration page:
 
 1. Find "Global hotkey".
 2. Click "Record hotkey".
@@ -105,27 +105,27 @@ The default upload hotkey is `Ctrl+Shift+B`. If it conflicts with another app, c
 
 The hotkey field only displays the current hotkey. It is not manually editable, which avoids invalid key combinations.
 
-### 8. Upload Content
+### 8. Save Content
 
 Daily use takes three steps:
 
 1. Copy content from a browser, editor, chat window, or PDF.
-2. Press your configured upload hotkey. The default is `Ctrl+Shift+B`.
-3. Wait for the tray notification, or open the upload center from the tray menu.
+2. Press your configured save hotkey. The default is `Ctrl+Shift+B`.
+3. Wait for the tray notification, or open save records from the tray menu.
 
-You can also right-click the tray icon and choose "Upload current clipboard".
+You can also right-click the tray icon and choose "保存当前剪贴板" (save current clipboard).
 
 ### 9. Check The Result
 
-After a successful upload:
+After a successful save:
 
-- Notion: the upload center includes the Notion page link.
+- Notion: save records include the Notion page link.
 - Obsidian: the Markdown file appears in the configured vault folder.
 - The tray menu can open the latest Obsidian note directly.
 
-If an upload fails, it stays in the local queue and can be retried later. The upload center shows waiting and final-failed tasks; use "Retry this item" for one task or "Retry failed tasks" to move all final-failed tasks back into the queue.
+If a save fails, it stays in the local queue and can be retried later. Save records show waiting and final-failed tasks; use "Retry this item" for one task or "Retry failed tasks" to move all final-failed tasks back into the queue.
 
-The upload center is a local snapshot page. If it has been open for a while, click "Refresh status" to generate the latest view.
+Save records are shown as a local snapshot page. If it has been open for a while, click "Refresh status" to generate the latest view.
 
 ## Troubleshooting
 
@@ -141,7 +141,7 @@ This is expected. Except for the one post-install launch, open the configuration
 
 Check that `Obsidian Vault` points to the correct vault. `Obsidian Folder` is a folder inside the vault, such as `Clipboard`, not a full disk path.
 
-### Notion Upload Fails
+### Notion Save Fails
 
 Common causes:
 
@@ -150,7 +150,7 @@ Common causes:
 - `data_source_id` is incorrect.
 - The target database has no title property.
 
-Open the configuration page and click "Test upload" to confirm a real write. The upload center shows the failure reason if it does not work.
+Open the configuration page and click "Test save" to confirm a real write. Save records show the failure reason if it does not work.
 
 ### Code Blocks Have No Color
 
@@ -162,7 +162,7 @@ The app supports common `$...$`, `$$...$$`, `\(...\)`, and `\[...\]` formulas. F
 
 ## Manual Configuration Examples
 
-If you do not use the configuration page, edit `notion_clipboard_win.ini`. For most users, the configuration page is still recommended because hotkey recording, Obsidian vault selection, and test upload are clearer there.
+If you do not use the configuration page, edit `notion_clipboard_win.ini`. For most users, the configuration page is still recommended because hotkey recording, Obsidian vault selection, and test save are clearer there.
 
 Notion only:
 

@@ -581,11 +581,11 @@ void AppendConfirmLink(std::ostringstream *html, const std::string &url, const s
 
 void AppendRecentTable(std::ostringstream *html, const std::vector<RecentRecord> &records)
 {
-    *html << "<section><div class=\"section-head\"><h2>最近上传</h2><span>" << records.size()
+    *html << "<section><div class=\"section-head\"><h2>最近保存</h2><span>" << records.size()
           << " 条</span></div>";
     if (records.empty())
     {
-        *html << "<p class=\"empty\">还没有上传记录。</p></section>";
+        *html << "<p class=\"empty\">还没有保存记录。</p></section>";
         return;
     }
 
@@ -740,7 +740,7 @@ std::filesystem::path WriteUploadCenterPage(const AppConfig &config, const std::
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Notion Clipboard Win 上传中心</title>
+<title>Notion Clipboard Win 保存记录</title>
 <style>
 :root{color-scheme:light dark;--bg:#f5f6f8;--panel:#fff;--text:#172033;--muted:#667085;--line:#d9dee8;--accent:#1f6feb;--ok:#047857;--bad:#b42318;--queue:#7c3aed}
 @media (prefers-color-scheme:dark){:root{--bg:#111827;--panel:#182233;--text:#edf2f7;--muted:#9aa8bd;--line:#324055;--accent:#5aa2ff;--ok:#34d399;--bad:#f87171;--queue:#c084fc}}
@@ -756,7 +756,7 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:8px;m
 </style>
 </head>
 <body>
-<header><div class="bar"><div><h1>上传中心</h1><div class="path">本地上传记录和重试队列</div></div><div class="toolbar"><a class="button" href=")"
+<header><div class="bar"><div><h1>保存记录</h1><div class="path">本地保存记录和重试队列</div></div><div class="toolbar"><a class="button" href=")"
          << HtmlEscape(refresh_url) << R"(">刷新状态</a><a class="button" href=")"
          << HtmlEscape(retry_failed_url)
          << R"HTML(" onclick="return confirm('将 failed 目录中的任务移回等待队列并立即重试。继续吗？')">重试失败任务</a></div></div></header>
@@ -852,9 +852,9 @@ int RunUploadCenterSelfTest()
 
         const fs::path page = WriteUploadCenterPage(config, root / L"notion_clipboard_win.ini");
         const std::string html = ReadWholeFile(page);
-        for (const char *needle : {"上传中心", "Upload Center Title", "https://www.notion.so/page", "vault missing",
+        for (const char *needle : {"保存记录", "Upload Center Title", "https://www.notion.so/page", "vault missing",
                                     "Queued Title", "temporary error", "Failed Queue Title", "permanent error",
-                                    "页面是打开时生成的本地快照", "data-copy=", "本地上传记录和重试队列",
+                                    "页面是打开时生成的本地快照", "data-copy=", "本地保存记录和重试队列",
                                     "open-upload-center", "刷新状态", "retry-failed-uploads", "重试失败任务",
                                     "retry-failed-job", "重试此项"})
         {
@@ -863,7 +863,7 @@ int RunUploadCenterSelfTest()
                 fail(std::string("missing expected upload center content: ") + needle);
             }
         }
-        for (const char *needle : {"打开状态目录", "原始报告"})
+        for (const char *needle : {"打开状态目录", "原始报告", "上传中心", "最近上传", "还没有上传记录"})
         {
             if (html.find(needle) != std::string::npos)
             {

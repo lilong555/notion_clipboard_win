@@ -486,7 +486,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
     AddSectionEnd(&html);
 
     html << R"(
-</div><aside class="output"><h2>保存配置</h2><p class="hint">完成后点击“应用并重启”，托盘进程会读取新设置。需要先试写一条内容时，点击“测试上传”。</p><div id="status" class="status" role="status"></div><div class="actions"><button id="apply">应用并重启</button><button id="testUpload" class="secondary">测试上传</button><button id="openUploadCenter" class="secondary">上传中心</button><button id="refreshObs">重新扫描 Obsidian</button><button id="reveal" class="secondary">显示/隐藏 token</button></div><details class="advanced"><summary>高级：查看或导出 ini</summary><p>这里包含 token，仅用于手动备份或调试。</p><div class="path">配置文件：)"
+</div><aside class="output"><h2>保存配置</h2><p class="hint">完成后点击“应用并重启”，托盘进程会读取新设置。需要先试写一条内容时，点击“测试保存”。</p><div id="status" class="status" role="status"></div><div class="actions"><button id="apply">应用并重启</button><button id="testUpload" class="secondary">测试保存</button><button id="openUploadCenter" class="secondary">保存记录</button><button id="refreshObs">重新扫描 Obsidian</button><button id="reveal" class="secondary">显示/隐藏 token</button></div><details class="advanced"><summary>高级：查看或导出 ini</summary><p>这里包含 token，仅用于手动备份或调试。</p><div class="path">配置文件：)"
          << HtmlEscape(WideToUtf8(config_path.wstring())) << R"(</div><div class="actions"><button id="copy">复制配置</button><a id="download" class="download secondary" download="notion_clipboard_win.ini">下载 ini</a></div><textarea id="ini" readonly spellcheck="false"></textarea></details></aside></main>
 <script>
 const order=["upload_target","notion_token","data_source_id","database_id","title_property_name","content_property_name","content_property_max_chars","created_time_property_name","obsidian_vault_dir","obsidian_folder","obsidian_tags","state_dir","hotkey","enable_hotkey","tray_notifications","start_with_windows","duplicate_suppression_ms","max_clipboard_bytes","min_request_interval_ms","append_batch_size","max_retry_attempts","http_retry_attempts"];
@@ -537,7 +537,7 @@ document.querySelectorAll("[data-key]").forEach(el=>{el.addEventListener("input"
 document.querySelectorAll("[data-choice-target]").forEach(select=>select.addEventListener("change",()=>syncChoice(select)));
 document.querySelectorAll("[data-custom-key]").forEach(custom=>custom.addEventListener("input",()=>{const key=custom.dataset.customKey; const select=document.querySelector(`[data-choice-target="${key}"]`); const hidden=document.querySelector(`[data-key="${key}"]`); if(select&&select.value===CUSTOM_PICKER_VALUE&&hidden){hidden.value=custom.value.trim(); if(key==="obsidian_vault_dir")refreshObsidianFolders(); build();}}));
 applyButton.addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送配置给托盘应用，应用会校验、写入并重启。"; location.href="notion-clipboard-win:/apply-config/?path="+encodeURIComponent(configPath)+"&content="+encodeURIComponent(iniBox.value);});
-document.getElementById("testUpload").addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送测试上传请求，结果会写入并打开上传中心。"; location.href=protocolUrlWithOutput("test-upload");});
+document.getElementById("testUpload").addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送测试保存请求，结果会写入并打开保存记录。"; location.href=protocolUrlWithOutput("test-upload");});
 document.getElementById("openUploadCenter").addEventListener("click",()=>{location.href=protocolUrl("open-upload-center");});
 document.getElementById("refreshObs").addEventListener("click",()=>{location.href=protocolUrl("open-config-page"); setTimeout(()=>location.reload(),1200);});
 document.getElementById("copy").addEventListener("click",async()=>{build(); await navigator.clipboard.writeText(iniBox.value);});
@@ -646,10 +646,10 @@ int RunConfigPageSelfTest()
                                          "配置文件：",
                                          "id=\"ini\" readonly spellcheck=\"false\"", "URL.revokeObjectURL(downloadUrl)",
                                          "id=\"copy\"", "复制配置",
-                                         "id=\"download\"", "下载 ini", "id=\"testUpload\"", "测试上传",
+                                         "id=\"download\"", "下载 ini", "id=\"testUpload\"", "测试保存",
                                          "protocolUrlWithOutput(\"test-upload\")",
-                                         "已发送测试上传请求，结果会写入并打开上传中心。",
-                                         "id=\"openUploadCenter\"", "上传中心",
+                                         "已发送测试保存请求，结果会写入并打开保存记录。",
+                                         "id=\"openUploadCenter\"", "保存记录",
                                          "protocolUrl(\"open-upload-center\")",
                                        "id=\"status\"", "validateConfig()", "applyButton.disabled",
                                        "配置完整。保存后会写入：", "需要处理：",
@@ -678,6 +678,7 @@ int RunConfigPageSelfTest()
                                         "自动监听剪贴板", "debounce_ms", "id=\"previewObsidian\"", "id=\"obsidianPreview\"",
                                         "预览 Obsidian Markdown", "preview-obsidian-clipboard",
                                         "upload_initial_clipboard", "启动后上传当前剪贴板",
+                                        "测试上传", "上传中心",
                                         "id=\"validateOutputConfig\"", "查看配置诊断", "id=\"openConfigDiagnostics\"",
                                         "输出 ini", "页面会输出包含 token 的完整配置", "上传后端",
                                         "配置完整。保存后将上传到：",
