@@ -114,6 +114,7 @@ constexpr UINT kMenuOpenRecentUploads = 3013;
 constexpr UINT kMenuValidateConfig = 3014;
 constexpr UINT kMenuOpenConfigDiagnostics = 3015;
 constexpr UINT kMenuOpenLastObsidian = 3016;
+constexpr UINT kMenuPreviewObsidian = 3017;
 constexpr const wchar_t *kAppDisplayName = L"Notion Clipboard Win";
 
 #ifndef NIF_SHOWTIP
@@ -271,6 +272,11 @@ std::filesystem::path RecentUploadResultsPath(const AppConfig &config)
 std::filesystem::path LastObsidianUploadPath(const AppConfig &config)
 {
     return config.state_dir / L"last-obsidian-upload.ini";
+}
+
+std::filesystem::path ObsidianPreviewPath(const AppConfig &config)
+{
+    return config.state_dir / L"obsidian-preview.md";
 }
 
 std::filesystem::path ConfigDiagnosticsPath(const AppConfig &config)
@@ -1340,6 +1346,7 @@ private:
 
         const std::wstring hotkey_label = L"热键: " + Utf8ToWide(hotkey_spec_.display);
         AppendMenuW(menu, MF_STRING, kMenuUploadNow, L"上传当前剪贴板");
+        AppendMenuW(menu, MF_STRING, kMenuPreviewObsidian, L"预览 Obsidian Markdown");
         AppendMenuW(menu, MF_GRAYED, kMenuHotkeyStatus, hotkey_label.c_str());
         AppendMenuW(menu, MF_STRING | (hotkey_enabled_ ? MF_CHECKED : MF_UNCHECKED), kMenuToggleHotkey, L"启用热键");
         AppendMenuW(menu, MF_STRING | (recording_hotkey_ ? MF_GRAYED : MF_ENABLED), kMenuRecordHotkey, L"录制热键...");
@@ -1376,6 +1383,9 @@ private:
         {
         case kMenuUploadNow:
             ProcessClipboard("托盘菜单", true);
+            break;
+        case kMenuPreviewObsidian:
+            PreviewClipboardForObsidian();
             break;
         case kMenuToggleHotkey:
             ToggleHotkey();
@@ -1981,6 +1991,43 @@ private:
         if (user_initiated)
         {
             ShowNotification(L"Notion Clipboard Win", L"剪贴板内容已加入上传队列：" + JoinTargetDisplayNames(targets) + L"。");
+        }
+    }
+
+    void PreviewClipboardForObsidian()
+    {
+        const auto text = reader_.ReadText(logger_, config_->max_clipboard_bytes);
+        if (!text.has_value())
+        {
+            ShowNotification(L"Notion Clipboard Win", L"当前剪贴板没有可预览的文本。");
+            return;
+        }
+
+        try
+        {
+            const std::string input = Trim(NormalizeLineEndings(*text));
+            if (input.empty())
+            {
+                ShowNotification(L"Notion Clipboard Win", L"当前剪贴板没有可预览的文本。");
+                return;
+            }
+
+            const fs::path preview_path = ObsidianPreviewPath(*config_);
+            AtomicWriteFile(preview_path, BuildObsidianMarkdownPreview(input, config_->obsidian_tags));
+            if (logger_ != nullptr)
+            {
+                logger_->Info("已生成 Obsidian Markdown 预览: " + WideToUtf8(preview_path.wstring()) +
+                              "，bytes=" + std::to_string(input.size()));
+            }
+            OpenPath(preview_path);
+        }
+        catch (const std::exception &ex)
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Error("生成 Obsidian Markdown 预览失败: " + std::string(ex.what()));
+            }
+            ShowNotification(L"Notion Clipboard Win", L"生成 Obsidian 预览失败，请查看日志。");
         }
     }
 
