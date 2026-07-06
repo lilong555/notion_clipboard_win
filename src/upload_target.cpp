@@ -1587,6 +1587,8 @@ int RunUploadTargetSelfTest()
         fs::temp_directory_path() / (L"notion-clipboard-win-target-test-" + std::to_wstring(NowUnixMs()));
     std::error_code ignored;
     fs::remove_all(root, ignored);
+    const std::wstring old_experimental_env = GetEnvWide(L"NCW_ENABLE_EXPERIMENTAL_TARGETS");
+    SetEnvironmentVariableW(L"NCW_ENABLE_EXPERIMENTAL_TARGETS", L"true");
 
     try
     {
@@ -1923,6 +1925,8 @@ int RunUploadTargetSelfTest()
     }
 
     fs::remove_all(root, ignored);
+    SetEnvironmentVariableW(L"NCW_ENABLE_EXPERIMENTAL_TARGETS",
+                            old_experimental_env.empty() ? nullptr : old_experimental_env.c_str());
     if (ok)
     {
         std::cout << "[PASS] markdown_file upload target\n";

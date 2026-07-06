@@ -79,6 +79,17 @@ std::string SupportedUploadTargetsText()
     return "notion、obsidian";
 }
 
+bool IsExperimentalUploadTarget(const std::string &target)
+{
+    return target == "webhook" || target == "yuque" || target == "feishu_doc";
+}
+
+bool ExperimentalUploadTargetsEnabled()
+{
+    const std::string enabled = ToLowerAscii(Trim(GetEnvUtf8(L"NCW_ENABLE_EXPERIMENTAL_TARGETS")));
+    return enabled == "1" || enabled == "true" || enabled == "yes" || enabled == "on";
+}
+
 void ApplyConfigValue(AppConfig *config, const std::string &key, const std::string &value)
 {
     const std::string normalized = ToLowerAscii(Trim(key));
@@ -583,6 +594,37 @@ int RunConfigSelfTest()
         {
             fail("hidden --test-upload-url compatibility flag was not parsed");
         }
+
+        AppConfig experimental_config;
+        experimental_config.upload_target = "webhook";
+        experimental_config.webhook_url = "https://example.com/hook";
+        const std::wstring old_experimental_env = GetEnvWide(L"NCW_ENABLE_EXPERIMENTAL_TARGETS");
+        SetEnvironmentVariableW(L"NCW_ENABLE_EXPERIMENTAL_TARGETS", nullptr);
+        bool rejected_experimental = false;
+        try
+        {
+            ValidateConfigOrThrow(experimental_config);
+        }
+        catch (const std::exception &ex)
+        {
+            rejected_experimental = std::string(ex.what()).find("实验目标") != std::string::npos;
+        }
+        if (!rejected_experimental)
+        {
+            fail("experimental upload targets were not rejected by default");
+        }
+
+        SetEnvironmentVariableW(L"NCW_ENABLE_EXPERIMENTAL_TARGETS", L"true");
+        try
+        {
+            ValidateConfigOrThrow(experimental_config);
+        }
+        catch (const std::exception &ex)
+        {
+            fail(std::string("experimental upload target was not allowed when enabled: ") + ex.what());
+        }
+        SetEnvironmentVariableW(L"NCW_ENABLE_EXPERIMENTAL_TARGETS",
+                                old_experimental_env.empty() ? nullptr : old_experimental_env.c_str());
     }
     catch (const std::exception &ex)
     {
@@ -600,6 +642,13 @@ namespace
 {
 void ValidateSingleUploadTargetOrThrow(const AppConfig &config)
 {
+    if (IsExperimentalUploadTarget(config.upload_target) && !ExperimentalUploadTargetsEnabled())
+    {
+        throw std::runtime_error("upload_target " + config.upload_target +
+                                 " 仍是实验目标，当前版本默认只支持 " + SupportedUploadTargetsText() +
+                                 "。如需开发测试，请设置 NCW_ENABLE_EXPERIMENTAL_TARGETS=true");
+    }
+
     if (config.upload_target == "notion")
     {
         if (config.notion_token.empty())

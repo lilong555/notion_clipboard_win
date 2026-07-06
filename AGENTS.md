@@ -5,6 +5,7 @@
 - 与用户沟通使用中文。
 - 代码注释使用中文，保持简短，只解释不明显的设计意图。
 - C++ 代码保持 C++17，优先使用标准库和 Win32/WinHTTP，不引入第三方依赖。
+- 稳定用户目标只包含 Notion 和 Obsidian；Webhook、语雀、飞书文档只能在 `NCW_ENABLE_EXPERIMENTAL_TARGETS=true` 下用于开发测试。
 
 ## 构建
 
