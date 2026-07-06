@@ -462,12 +462,13 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
 
     html << "<section><h2>未来支持</h2><p>Webhook、语雀和飞书文档暂不作为当前稳定上传后端，后续会在 Notion 与 Obsidian 体验稳定后继续打磨。</p></section>\n";
 
-    AddSectionStart(&html, "应用行为", "热键、通知和重试参数。");
-    AddInput(&html, "state_dir", "状态目录", PathValue(config.state_dir));
+    AddSectionStart(&html, "应用行为", "常用开关；高级运行参数保持默认即可。");
     AddHotkeyInput(&html, config.hotkey);
     AddCheckbox(&html, "enable_hotkey", "启用全局热键", config.enable_hotkey);
     AddCheckbox(&html, "tray_notifications", "托盘通知", config.tray_notifications);
     AddCheckbox(&html, "start_with_windows", "开机自动启动", config.start_with_windows);
+    html << "<details class=\"advanced\"><summary>高级：性能和重试</summary><p>这些参数用于限流、队列和本地状态保存。一般不需要修改。</p>\n";
+    AddInput(&html, "state_dir", "状态目录", PathValue(config.state_dir));
     AddInput(&html, "duplicate_suppression_ms", "重复抑制 ms", std::to_string(config.duplicate_suppression_ms), "",
              "number");
     AddInput(&html, "max_clipboard_bytes", "最大剪贴板字节数", std::to_string(config.max_clipboard_bytes), "",
@@ -480,6 +481,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
              "number");
     AddInput(&html, "http_retry_attempts", "HTTP 短重试次数", std::to_string(config.http_retry_attempts), "",
              "number");
+    html << "</details>\n";
     AddSectionEnd(&html);
 
     html << R"(
@@ -641,6 +643,11 @@ int RunConfigPageSelfTest()
                                        "配置完整。保存后将上传到：", "需要处理：",
                                        "id=\"hotkeyInput\"", "readonly aria-readonly=\"true\"", "id=\"recordHotkey\"",
                                        "录制热键", "热键只能通过录制修改",
+                                       "高级：性能和重试", "这些参数用于限流、队列和本地状态保存。",
+                                       "data-key=\"state_dir\"", "data-key=\"duplicate_suppression_ms\"",
+                                       "data-key=\"max_clipboard_bytes\"", "data-key=\"min_request_interval_ms\"",
+                                       "data-key=\"append_batch_size\"", "data-key=\"max_retry_attempts\"",
+                                       "data-key=\"http_retry_attempts\"",
                                        "recordedKeyLabel(event)", "formatRecordedHotkey(event)",
                                        "handleRecordedHotkey(event)", "startHotkeyRecording()",
                                        "hotkeyInput.addEventListener(\"click\",startHotkeyRecording)",
