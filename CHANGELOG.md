@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.3 - 2026-07-06
+
 - Add a local save records page with recent results, waiting/final-failed queue visibility, refresh, and retry actions for failed items.
 - Simplify the tray and configuration-page surface around Notion and Obsidian, with future-only targets removed from the main user flow.
 - Use save-oriented wording across the tray menu, configuration page, save records, CLI help, logs, example config, and user documentation.
