@@ -1,6 +1,7 @@
 param(
     [string]$Configuration = "Release",
-    [switch]$AllowUnreleased
+    [switch]$AllowUnreleased,
+    [switch]$AllowExistingVersion
 )
 
 $ErrorActionPreference = "Stop"
@@ -18,6 +19,28 @@ if ((Test-Path $ChangelogPath) -and -not $AllowUnreleased) {
     $Unreleased = [regex]::Match($Changelog, '(?ms)^## Unreleased[ \t]*(?:\r?\n)+(.*?)(?=^##\s|\z)')
     if ($Unreleased.Success -and $Unreleased.Groups[1].Value -match '(?m)^\s*-\s+\S') {
         throw "CHANGELOG.md still has Unreleased entries. Update VERSION and move those entries to a release section before building a release installer, or pass -AllowUnreleased for a local test installer."
+    }
+}
+
+$GitCommand = Get-Command git -ErrorAction SilentlyContinue
+if ($GitCommand -and -not $AllowExistingVersion) {
+    Push-Location $Root
+    try {
+        $VersionTag = "v$AppVersion"
+        $HeadOutput = & $GitCommand.Source rev-parse HEAD 2>$null
+        $HeadStatus = $LASTEXITCODE
+        $TagOutput = & $GitCommand.Source rev-parse --verify "$VersionTag^{commit}" 2>$null
+        $TagStatus = $LASTEXITCODE
+        if ($HeadStatus -eq 0 -and $TagStatus -eq 0) {
+            $HeadCommit = ($HeadOutput | Select-Object -First 1).Trim()
+            $TagCommit = ($TagOutput | Select-Object -First 1).Trim()
+            if ($HeadCommit -and $TagCommit -and $HeadCommit -ne $TagCommit) {
+                throw "Tag $VersionTag already exists but does not point to HEAD. Bump VERSION before building a release installer, or pass -AllowExistingVersion for a local test installer."
+            }
+        }
+    }
+    finally {
+        Pop-Location
     }
 }
 

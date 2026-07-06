@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Guard release installer builds when the current VERSION tag already exists on a different commit.
+
 ## 0.2.4 - 2026-07-06
 
 - Remove obsolete configuration diagnostics protocol handlers and dead tray command paths after the UI cleanup.
