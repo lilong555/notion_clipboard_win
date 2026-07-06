@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an improvement for the stable Notion or Obsidian workflow.
+title: "[Feature] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Current stable targets are Notion and Obsidian. Future platform requests are welcome, but the project is prioritizing these two paths first.
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Notion saving
+        - Obsidian saving
+        - Configuration page
+        - Tray workflow
+        - Markdown or formula conversion
+        - Installer or release process
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What workflow is currently difficult, slow, or unreliable?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Describe the smallest behavior change that would solve the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: examples
+    attributes:
+      label: Examples or references
+      description: Optional screenshots, sample text, or comparable app behavior.
+    validations:
+      required: false

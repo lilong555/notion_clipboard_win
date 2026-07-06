@@ -160,6 +160,10 @@ Notion highlighting depends on the code block language. The app tries to detect 
 
 The app supports common `$...$`, `$$...$$`, `\(...\)`, and `\[...\]` formulas. If the saved result looks wrong, reproduce it with "Test save" on the configuration page; save records show the target and failure reason. When reporting an issue, include the source text and whether the target is Notion or Obsidian.
 
+## Reporting Issues
+
+Use the Bug report form in GitHub Issues when possible. Include the app version, Windows version, save target, smallest reproducible source text, and the save records error. Do not include Notion tokens, database IDs, or private note content.
+
 ## Manual Configuration Examples
 
 If you do not use the configuration page, edit `notion_clipboard_win.ini`. For most users, the configuration page is still recommended because hotkey recording, Obsidian vault selection, and test save are clearer there.

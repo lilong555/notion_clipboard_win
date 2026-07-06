@@ -1,0 +1,76 @@
+name: Bug report
+description: Report a problem with Notion or Obsidian saving.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a problem. Do not paste Notion tokens, database IDs, or private note content you cannot share.
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      description: Use the version shown by the installer or release file name.
+      placeholder: "0.2.5"
+    validations:
+      required: true
+  - type: dropdown
+    id: target
+    attributes:
+      label: Save target
+      options:
+        - Notion
+        - Obsidian
+        - Notion and Obsidian
+        - Configuration page
+        - Installer or startup
+    validations:
+      required: true
+  - type: input
+    id: windows
+    attributes:
+      label: Windows version
+      placeholder: "Windows 11 24H2"
+    validations:
+      required: true
+  - type: textarea
+    id: source
+    attributes:
+      label: Source text or minimal sample
+      description: Include the smallest text that reproduces the issue. Remove private data first.
+      placeholder: |
+        Paste a short Markdown/HTML/text sample here.
+    validations:
+      required: false
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+      placeholder: "What should the saved Notion page or Obsidian file look like?"
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      placeholder: "What happened instead?"
+    validations:
+      required: true
+  - type: textarea
+    id: records
+    attributes:
+      label: Save records or log excerpt
+      description: Paste the relevant error from save records or logs. Remove tokens and private IDs.
+      render: text
+    validations:
+      required: false
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Copy ...
+        2. Press ...
+        3. Open ...
+    validations:
+      required: true
