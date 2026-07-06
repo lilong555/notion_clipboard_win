@@ -6,6 +6,8 @@
 - Add a `-CheckOnly` mode to the installer build script for fast release-guard verification.
 - Document the release guard and installer packaging commands for contributors.
 - Keep Obsidian Markdown debug output out of the user README while documenting it for contributors.
+- Add a lightweight regression script for installer release-guard checks.
+- Fix release guard git probes so missing version tags are handled by exit code instead of stderr noise.
 
 ## 0.2.4 - 2026-07-06
 

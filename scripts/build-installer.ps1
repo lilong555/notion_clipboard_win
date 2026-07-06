@@ -10,6 +10,26 @@ $ErrorActionPreference = "Stop"
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $AppVersion = (Get-Content -Raw (Join-Path $Root "VERSION")).Trim()
 
+function Invoke-NativeForOutput {
+    param(
+        [string]$Command,
+        [string[]]$Arguments
+    )
+
+    $PreviousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    try {
+        $Output = & $Command @Arguments 2>$null
+        return [pscustomobject]@{
+            ExitCode = $LASTEXITCODE
+            Output = $Output
+        }
+    }
+    finally {
+        $ErrorActionPreference = $PreviousErrorActionPreference
+    }
+}
+
 function Test-ReleaseGuards {
     if ($AppVersion -notmatch '^\d+\.\d+\.\d+$') {
         throw "VERSION must use x.y.z format. Current value: $AppVersion"
@@ -29,13 +49,11 @@ function Test-ReleaseGuards {
         Push-Location $Root
         try {
             $VersionTag = "v$AppVersion"
-            $HeadOutput = & $GitCommand.Source rev-parse HEAD 2>$null
-            $HeadStatus = $LASTEXITCODE
-            $TagOutput = & $GitCommand.Source rev-parse --verify "$VersionTag^{commit}" 2>$null
-            $TagStatus = $LASTEXITCODE
-            if ($HeadStatus -eq 0 -and $TagStatus -eq 0) {
-                $HeadCommit = ($HeadOutput | Select-Object -First 1).Trim()
-                $TagCommit = ($TagOutput | Select-Object -First 1).Trim()
+            $HeadResult = Invoke-NativeForOutput $GitCommand.Source @("rev-parse", "HEAD")
+            $TagResult = Invoke-NativeForOutput $GitCommand.Source @("rev-parse", "--verify", "$VersionTag^{commit}")
+            if ($HeadResult.ExitCode -eq 0 -and $TagResult.ExitCode -eq 0) {
+                $HeadCommit = ($HeadResult.Output | Select-Object -First 1).Trim()
+                $TagCommit = ($TagResult.Output | Select-Object -First 1).Trim()
                 if ($HeadCommit -and $TagCommit -and $HeadCommit -ne $TagCommit) {
                     throw "Tag $VersionTag already exists but does not point to HEAD. Bump VERSION before building a release installer, or pass -AllowExistingVersion for a local test installer."
                 }
