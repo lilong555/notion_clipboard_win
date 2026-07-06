@@ -514,7 +514,6 @@ void PrintHelp()
               << "用法:\n"
               << "  notion_clipboard_win.exe [--config path]              启动后台托盘进程\n"
               << "  notion_clipboard_win.exe --once [--config path]       只保存当前剪贴板一次\n"
-              << "  notion_clipboard_win.exe --validate-config            验证保存目标配置\n"
               << "  notion_clipboard_win.exe --dry-run --once             读取剪贴板但不保存\n\n"
               << "  notion_clipboard_win.exe --self-test                  运行本地转换回归测试\n\n"
               << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不保存\n\n"
