@@ -116,6 +116,7 @@ Daily use takes three steps:
 You can also right-click the tray icon and choose "Upload current clipboard".
 
 To inspect the Obsidian Markdown first, copy the content, right-click the tray icon, and choose "Preview Obsidian Markdown". The app writes and opens a local preview file without uploading to Notion or writing to your Obsidian vault.
+The configuration page has the same "Preview Obsidian Markdown" action and uses the Obsidian tags currently shown on the page.
 
 ### 9. Check The Result
 

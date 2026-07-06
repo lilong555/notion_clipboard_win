@@ -116,6 +116,7 @@ upload_target=notion,obsidian
 你也可以右键托盘图标，选择“上传当前剪贴板”。
 
 如果想先检查 Obsidian Markdown 效果，可以复制内容后右键托盘图标，选择“预览 Obsidian Markdown”。程序会生成本地预览文件并打开，不会上传到 Notion，也不会写入 Obsidian vault。
+配置页面里的“预览 Obsidian Markdown”按钮也可以做同样的事，并会使用页面当前填写的 Obsidian 标签。
 
 ### 9. 查看上传结果
 

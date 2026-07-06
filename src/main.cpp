@@ -916,6 +916,31 @@ private:
     }
 };
 
+std::filesystem::path WriteObsidianPreviewFromText(const AppConfig &config, std::string text)
+{
+    const std::string input = Trim(NormalizeLineEndings(std::move(text)));
+    if (input.empty())
+    {
+        throw std::runtime_error("当前剪贴板没有可预览的文本");
+    }
+
+    const fs::path preview_path = ObsidianPreviewPath(config);
+    AtomicWriteFile(preview_path, BuildObsidianMarkdownPreview(input, config.obsidian_tags));
+    return preview_path;
+}
+
+std::optional<std::filesystem::path> WriteObsidianPreviewFromClipboard(const AppConfig &config,
+                                                                       const ClipboardReader &reader,
+                                                                       Logger *logger)
+{
+    const auto text = reader.ReadText(logger, config.max_clipboard_bytes);
+    if (!text.has_value())
+    {
+        return std::nullopt;
+    }
+    return WriteObsidianPreviewFromText(config, *text);
+}
+
 class TrayApplication
 {
 public:
@@ -1996,30 +2021,21 @@ private:
 
     void PreviewClipboardForObsidian()
     {
-        const auto text = reader_.ReadText(logger_, config_->max_clipboard_bytes);
-        if (!text.has_value())
-        {
-            ShowNotification(L"Notion Clipboard Win", L"当前剪贴板没有可预览的文本。");
-            return;
-        }
-
         try
         {
-            const std::string input = Trim(NormalizeLineEndings(*text));
-            if (input.empty())
+            const std::optional<fs::path> preview_path =
+                WriteObsidianPreviewFromClipboard(*config_, reader_, logger_);
+            if (!preview_path.has_value())
             {
                 ShowNotification(L"Notion Clipboard Win", L"当前剪贴板没有可预览的文本。");
                 return;
             }
 
-            const fs::path preview_path = ObsidianPreviewPath(*config_);
-            AtomicWriteFile(preview_path, BuildObsidianMarkdownPreview(input, config_->obsidian_tags));
             if (logger_ != nullptr)
             {
-                logger_->Info("已生成 Obsidian Markdown 预览: " + WideToUtf8(preview_path.wstring()) +
-                              "，bytes=" + std::to_string(input.size()));
+                logger_->Info("已生成 Obsidian Markdown 预览: " + WideToUtf8(preview_path->wstring()));
             }
-            OpenPath(preview_path);
+            OpenPath(*preview_path);
         }
         catch (const std::exception &ex)
         {
@@ -2549,6 +2565,39 @@ int TestUploadUrlAndOpenReport(const std::string &url)
     return 0;
 }
 
+int PreviewObsidianClipboardUrlAndOpen(const std::string &url)
+{
+    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "Obsidian 预览");
+    std::filesystem::path temp_path;
+    std::error_code ignored;
+
+    try
+    {
+        const AppConfig config = LoadConfigFromProtocolUrlOrContent(url, config_path, &temp_path);
+        std::filesystem::create_directories(config.state_dir);
+        Logger logger(config.state_dir / L"notion-clipboard-win.log", false);
+        ClipboardReader reader;
+        const std::optional<std::filesystem::path> preview_path =
+            WriteObsidianPreviewFromClipboard(config, reader, &logger);
+        std::filesystem::remove(temp_path, ignored);
+        if (!preview_path.has_value())
+        {
+            throw std::runtime_error("当前剪贴板没有可预览的文本");
+        }
+        OpenPathWithShell(*preview_path, "打开 Obsidian Markdown 预览");
+    }
+    catch (const std::exception &ex)
+    {
+        std::filesystem::remove(temp_path, ignored);
+        const AppConfig fallback_config = LoadConfig(config_path);
+        std::filesystem::create_directories(fallback_config.state_dir);
+        Logger logger(fallback_config.state_dir / L"notion-clipboard-win.log", false);
+        logger.Error("生成 Obsidian Markdown 预览失败: " + std::string(ex.what()));
+        throw;
+    }
+    return 0;
+}
+
 int OpenConfigDiagnosticsUrl(const std::string &url)
 {
     const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "配置诊断");
@@ -2695,6 +2744,17 @@ int RunMainSelfTest()
             if (parsed.test_upload_url.empty())
             {
                 fail("test-upload protocol URL was not parsed");
+            }
+        }
+        {
+            wchar_t exe[] = L"notion_clipboard_win.exe";
+            wchar_t url[] =
+                L"notion-clipboard-win:/preview-obsidian-clipboard/?path=C%3A%5CTemp%5Cnotion_clipboard_win.ini";
+            wchar_t *argv[] = {exe, url};
+            const CliOptions parsed = ParseCli(2, argv);
+            if (parsed.preview_obsidian_clipboard_url.empty())
+            {
+                fail("preview-obsidian-clipboard protocol URL was not parsed");
             }
         }
         {
@@ -2976,6 +3036,10 @@ int AppMain(int argc, wchar_t **argv)
     if (!cli.test_upload_url.empty())
     {
         return TestUploadUrlAndOpenReport(cli.test_upload_url);
+    }
+    if (!cli.preview_obsidian_clipboard_url.empty())
+    {
+        return PreviewObsidianClipboardUrlAndOpen(cli.preview_obsidian_clipboard_url);
     }
     if (!cli.open_config_diagnostics_url.empty())
     {
