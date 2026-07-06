@@ -57,7 +57,7 @@ upload_target=notion,obsidian
 如果你要上传到 Notion，需要准备两个信息：
 
 - `Notion Token`
-- `Data Source ID`
+- `Notion 数据源 ID`
 
 获取方式：
 
@@ -65,19 +65,19 @@ upload_target=notion,obsidian
 2. 复制它的 secret token，填到配置页面的 `Notion Token`。
 3. 打开你的目标数据库。
 4. 将这个数据库共享给刚创建的 integration。
-5. 复制数据库或 data source 的 ID，填到 `Data Source ID`。
+5. 复制数据库或 data source 的 ID，填到 `Notion 数据源 ID`。
 
 目标数据库至少需要一个标题属性。其他属性可以不填，正文会作为页面内容追加。
 
 ### 5. 配置 Obsidian
 
-如果你要上传到 Obsidian，需要选择一个 vault：
+如果你要上传到 Obsidian，需要选择一个仓库：
 
-1. 在配置页面找到 `Obsidian Vault`。
-2. 选择已经识别出来的 vault，或手动填写 vault 文件夹路径。
-3. 在 `Obsidian Folder` 里填写保存位置，例如 `Clipboard` 或 `Inbox/Clipboard`。
+1. 在配置页面找到 `Obsidian 仓库`。
+2. 选择已经识别出来的仓库，或手动填写仓库文件夹路径。
+3. 在 `Obsidian 子目录` 里填写保存位置，例如 `Clipboard` 或 `Inbox/Clipboard`。
 4. 如果文件夹不存在，程序会在写入时自动创建。
-5. `Obsidian Tags` 是可选项，可以填写 `algorithm cpp study` 这类标签。
+5. `Obsidian 标签` 是可选项，可以填写 `algorithm cpp study` 这类标签。
 
 写入 Obsidian 时，文件名会尽量使用内容标题。如果同名文件已经存在，会自动追加编号，避免覆盖旧笔记。
 
@@ -120,7 +120,7 @@ upload_target=notion,obsidian
 上传成功后：
 
 - Notion：上传中心会显示 Notion 页面链接。
-- Obsidian：文件会出现在你配置的 vault 和子目录中。
+- Obsidian：文件会出现在你配置的仓库和子目录中。
 - 托盘菜单里的“打开最近 Obsidian 笔记”可以直接打开最新保存的笔记。
 
 如果上传失败，任务会保存在本地队列里，之后会继续重试。上传中心会显示等待重试和最终失败的任务；对最终失败的任务，可以点击“重试此项”单独重试，也可以点击“重试失败任务”批量放回队列。
@@ -139,7 +139,7 @@ upload_target=notion,obsidian
 
 ### Obsidian 找不到文件夹
 
-先确认 `Obsidian Vault` 选的是正确的仓库。`Obsidian Folder` 是 vault 内部的子目录，例如 `Clipboard`，不是完整磁盘路径。
+先确认 `Obsidian 仓库` 选的是正确的仓库。`Obsidian 子目录` 是仓库内部的子目录，例如 `Clipboard`，不是完整磁盘路径。
 
 ### Notion 上传失败
 
@@ -162,7 +162,7 @@ Notion 的代码高亮依赖代码块语言。程序会尽量识别 `cpp`、`sql
 
 ## 手动配置示例
 
-如果你不使用配置页面，也可以编辑 `notion_clipboard_win.ini`。普通用户仍建议优先使用配置页面，因为热键录制、Obsidian vault 选择和测试上传都在页面里更直观。
+如果你不使用配置页面，也可以编辑 `notion_clipboard_win.ini`。普通用户仍建议优先使用配置页面，因为热键录制、Obsidian 仓库选择和测试上传都在页面里更直观。
 
 只上传到 Notion：
 

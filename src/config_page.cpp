@@ -358,7 +358,7 @@ std::vector<std::pair<std::string, std::string>> AddRootFolderOption(
 {
     std::vector<std::pair<std::string, std::string>> output;
     output.reserve(options.size() + 1);
-    output.emplace_back("", "Vault 根目录");
+    output.emplace_back("", "仓库根目录");
     output.insert(output.end(), options.begin(), options.end());
     return output;
 }
@@ -439,7 +439,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
 
     AddSectionStart(&html, "Notion", "上传为 Notion 数据源里的页面。");
     AddInput(&html, "notion_token", "Notion Token", config.notion_token, "secret_xxx", "password");
-    AddInput(&html, "data_source_id", "Data Source ID", config.data_source_id);
+    AddInput(&html, "data_source_id", "Notion 数据源 ID", config.data_source_id);
     html << "<details class=\"advanced\"><summary>高级：Notion 属性</summary><p>标题属性通常会自动识别；旧 Database ID 和内容预览属性仅在特殊数据库结构中需要。</p>\n";
     AddInput(&html, "database_id", "Database ID", config.database_id, "仅保留旧配置兼容。");
     AddInput(&html, "title_property_name", "标题属性", config.title_property_name);
@@ -450,11 +450,11 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
     html << "</details>\n";
     AddSectionEnd(&html);
 
-    AddSectionStart(&html, "Obsidian", "写入指定 vault 的 Markdown 笔记。");
-    AddSelectWithCustomInput(&html, "obsidian_vault_dir", "Obsidian Vault", PathValue(config.obsidian_vault_dir),
+    AddSectionStart(&html, "Obsidian", "写入指定 Obsidian 仓库的 Markdown 笔记。");
+    AddSelectWithCustomInput(&html, "obsidian_vault_dir", "Obsidian 仓库", PathValue(config.obsidian_vault_dir),
                              BuildObsidianVaultOptions(config.obsidian_vault_dir, obsidian_vaults),
                              "手动填写路径...", "E:\\obsidian\\第一个库",
-                             "选择已注册 vault；没有列出时可手动填写路径。");
+                             "选择已注册仓库；没有列出时可手动填写路径。");
     AddSelectWithCustomInput(&html, "obsidian_folder", "Obsidian 子目录", config.obsidian_folder,
                              AddRootFolderOption(current_obsidian_folder_options),
                              "新建/手动输入...", "Inbox/Clipboard", "选择已有目录；手动输入的新目录会自动创建。");
@@ -513,7 +513,7 @@ if(!targetChecks.some(el=>el.checked)&&targetChecks.length)targetChecks[0].check
 function val(key){const el=document.querySelector(`[data-key="${key}"]`); if(!el)return ""; return el.type==="checkbox"?(el.checked?"true":"false"):el.value.trim();}
 function selectedTargets(){return targetChecks.filter(el=>el.checked).map(targetValue);}
 function isHotkeyTextValid(text){const tokens=(text||"").split("+").map(part=>part.trim()).filter(Boolean); if(tokens.length<2)return false; let modifiers=0; let keys=0; const keyNames=new Set(["backspace","delete","del","down","end","enter","esc","escape","home","insert","ins","left","pagedown","pageup","pgdn","pgup","pause","printscreen","prtsc","right","space","tab","up"]); for(const raw of tokens){const token=raw.toLowerCase(); if(token==="ctrl"||token==="control"||token==="alt"||token==="shift"||token==="win"||token==="windows"||token==="super"||token==="meta"){modifiers++; continue;} if(/^[a-z0-9]$/.test(token)||/^f([1-9]|1[0-9]|2[0-4])$/.test(token)||keyNames.has(token)){keys++; continue;} return false;} return modifiers>0&&keys===1;}
-function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个保存位置"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要 Data Source ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian Vault 不能为空"); return problems;}
+function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个保存位置"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要数据源 ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian 仓库不能为空"); return problems;}
 function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后将上传到："+selected.join("、")); applyButton.disabled=problems.length>0;}
 function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; iniBox.value=text; if(downloadUrl)URL.revokeObjectURL(downloadUrl); downloadUrl=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); downloadLink.href=downloadUrl; updateStatus(); updateObsidianLocation();}
 function protocolUrl(action){return "notion-clipboard-win:/"+action+"/?path="+encodeURIComponent(configPath);}
@@ -528,9 +528,9 @@ const obsidianLocation=document.getElementById("obsidianLocation");
 function appendSelectOption(parent,value,text){const option=document.createElement("option"); option.value=value; option.textContent=text; parent.appendChild(option); return option;}
 function selectHasValue(select,value){return [...select.options].some(option=>option.value===value);}
 function joinObsidianPath(vault,folder){vault=(vault||"").trim(); folder=(folder||"").trim().replace(/^[\\/]+/,"").replace(/[\\/]+$/,""); if(!vault)return ""; if(!folder)return vault; return vault.replace(/[\\/]+$/,"")+"\\"+folder.replace(/[\\/]+/g,"\\");}
-function updateObsidianLocation(){if(!obsidianLocation)return; const vault=(obsidianVaultInput?.value||"").trim(); const folder=(obsidianFolderInput?.value||"").trim(); const location=joinObsidianPath(vault,folder); const group=findObsidianFolderGroup(vault); const count=group?(group.folders||[]).length:0; const scanText=group?`已扫描 ${count} 个子目录`:"未匹配到已注册 vault，可继续手动填写路径"; obsidianLocation.textContent=location?`Obsidian 写入位置：${location}（${scanText}）`:"Obsidian 写入位置：尚未选择 vault";}
+function updateObsidianLocation(){if(!obsidianLocation)return; const vault=(obsidianVaultInput?.value||"").trim(); const folder=(obsidianFolderInput?.value||"").trim(); const location=joinObsidianPath(vault,folder); const group=findObsidianFolderGroup(vault); const count=group?(group.folders||[]).length:0; const scanText=group?`已扫描 ${count} 个子目录`:"未匹配到已注册仓库，可继续手动填写路径"; obsidianLocation.textContent=location?`Obsidian 写入位置：${location}（${scanText}）`:"Obsidian 写入位置：尚未选择仓库";}
 function syncChoice(select){const key=select.dataset.choiceTarget; const hidden=document.querySelector(`[data-key="${key}"]`); const custom=document.querySelector(`[data-custom-key="${key}"]`); if(!hidden)return; if(select.value===CUSTOM_PICKER_VALUE){if(custom){custom.hidden=false; hidden.value=custom.value.trim();}}else{hidden.value=select.value; if(custom)custom.hidden=true;} if(key==="obsidian_vault_dir")refreshObsidianFolders(); build();}
-function refreshObsidianFolders(){if(!obsidianFolderSelect||!obsidianFolderInput)return; const vault=(obsidianVaultInput?.value||"").trim(); const group=findObsidianFolderGroup(vault); const folders=group?(group.folders||[]):[]; const current=obsidianFolderInput.value.trim(); obsidianFolderSelect.innerHTML=""; appendSelectOption(obsidianFolderSelect,"","Vault 根目录"); folders.forEach(folder=>appendSelectOption(obsidianFolderSelect,folder.value,folder.label)); appendSelectOption(obsidianFolderSelect,CUSTOM_PICKER_VALUE,folders.length?"新建/手动输入...":"手动输入/新建子目录..."); if(selectHasValue(obsidianFolderSelect,current)){obsidianFolderSelect.value=current; if(obsidianFolderCustom)obsidianFolderCustom.value="";}else{obsidianFolderSelect.value=CUSTOM_PICKER_VALUE; if(obsidianFolderCustom)obsidianFolderCustom.value=current;} syncChoice(obsidianFolderSelect);}
+function refreshObsidianFolders(){if(!obsidianFolderSelect||!obsidianFolderInput)return; const vault=(obsidianVaultInput?.value||"").trim(); const group=findObsidianFolderGroup(vault); const folders=group?(group.folders||[]):[]; const current=obsidianFolderInput.value.trim(); obsidianFolderSelect.innerHTML=""; appendSelectOption(obsidianFolderSelect,"","仓库根目录"); folders.forEach(folder=>appendSelectOption(obsidianFolderSelect,folder.value,folder.label)); appendSelectOption(obsidianFolderSelect,CUSTOM_PICKER_VALUE,folders.length?"新建/手动输入...":"手动输入/新建子目录..."); if(selectHasValue(obsidianFolderSelect,current)){obsidianFolderSelect.value=current; if(obsidianFolderCustom)obsidianFolderCustom.value="";}else{obsidianFolderSelect.value=CUSTOM_PICKER_VALUE; if(obsidianFolderCustom)obsidianFolderCustom.value=current;} syncChoice(obsidianFolderSelect);}
 targetChecks.forEach(el=>el.addEventListener("change",syncTargets));
 document.querySelectorAll("[data-key]").forEach(el=>{el.addEventListener("input",build);el.addEventListener("change",build);});
 document.querySelectorAll("[data-choice-target]").forEach(select=>select.addEventListener("change",()=>syncChoice(select)));
@@ -623,13 +623,15 @@ int RunConfigPageSelfTest()
             for (const char *needle : {"notion_secret", "value=\"obsidian\" data-target-option=\"obsidian\"",
                                        "value=\"notion\" data-target-option=\"notion\"", "未来支持", "Webhook、语雀和飞书文档",
                                        "notion,obsidian", "<strong>保存到</strong>", "至少选择一个保存位置",
+                                       "Notion 数据源 ID", "Notion 需要数据源 ID 或 Database ID",
                                        "高级：Notion 属性", "标题属性通常会自动识别",
                                        "data-key=\"database_id\"", "data-key=\"title_property_name\"",
                                        "data-key=\"content_property_name\"", "data-key=\"created_time_property_name\"",
                                        "data-key=\"content_property_max_chars\"",
-                                       "data-choice-target=\"obsidian_vault_dir\"",
+                                       "data-choice-target=\"obsidian_vault_dir\"", "Obsidian 仓库",
                                        "data-choice-target=\"obsidian_folder\"", "data-custom-key=\"obsidian_vault_dir\"",
                                        "data-custom-key=\"obsidian_folder\"", "新建/手动输入...", "value=\"aaa\"",
+                                       "仓库根目录", "未匹配到已注册仓库", "尚未选择仓库",
                                        "data-key=\"obsidian_tags\"", "Obsidian 标签", "algorithm cpp",
                                        "const obsidianFolderGroups=", "\"key\":", "obsidianFolderGroupMap",
                                        "normalizePathKey(path)", "findObsidianFolderGroup(vault)",
@@ -673,7 +675,9 @@ int RunConfigPageSelfTest()
                                         "预览 Obsidian Markdown", "preview-obsidian-clipboard",
                                         "upload_initial_clipboard", "启动后上传当前剪贴板",
                                         "id=\"validateOutputConfig\"", "查看配置诊断", "id=\"openConfigDiagnostics\"",
-                                        "输出 ini", "页面会输出包含 token 的完整配置", "上传后端"})
+                                        "输出 ini", "页面会输出包含 token 的完整配置", "上传后端",
+                                        "Obsidian Vault", "Vault 根目录", "未匹配到已注册 vault",
+                                        "尚未选择 vault"})
             {
                 if (html.find(needle) != std::string::npos)
                 {
