@@ -741,7 +741,7 @@ public:
         checkpoint();
         if (logger_ != nullptr)
         {
-            logger_->Info("Webhook 上传成功: " + job->id + " -> " + job->remote_url);
+            logger_->Info("Webhook 保存成功: " + job->id + " -> " + job->remote_url);
         }
     }
 
@@ -1150,7 +1150,7 @@ public:
         checkpoint();
         if (logger_ != nullptr)
         {
-            logger_->Info("飞书文档上传成功: " + job->id + " -> " + job->remote_url);
+            logger_->Info("飞书文档保存成功: " + job->id + " -> " + job->remote_url);
         }
     }
 
@@ -1312,7 +1312,7 @@ public:
         checkpoint();
         if (logger_ != nullptr)
         {
-            logger_->Info("语雀上传成功: " + job->id + " -> " + job->remote_url);
+            logger_->Info("语雀保存成功: " + job->id + " -> " + job->remote_url);
         }
     }
 
