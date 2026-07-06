@@ -13,7 +13,7 @@ The project currently focuses on two stable targets: **Notion** and **Obsidian**
 - Convert Markdown, HTML, code blocks, tables, inline formulas, and display formulas.
 - Built-in local configuration page, so most users do not need to edit ini files by hand, including hotkey recording, validation, and test upload.
 - Failed uploads are queued locally and can be retried later.
-- Tray menu for the upload center, recent records, queue status, failed-task retry, latest Obsidian note, and configuration diagnostics.
+- Tray menu for uploading the current clipboard, opening the upload center, viewing logs, and opening the latest Obsidian note.
 
 ## User Guide
 
@@ -32,7 +32,7 @@ If you do not see the tray icon, click the small up arrow near the Windows clock
 ### 2. Open The Configuration Page
 
 1. Right-click the tray icon.
-2. Choose "Configuration page".
+2. Choose "打开配置页面" (open configuration page).
 3. A local page opens in your browser.
 4. After editing, click "Apply and restart".
 
