@@ -10,6 +10,7 @@
 - Fix release guard git probes so missing version tags are handled by exit code instead of stderr noise.
 - Keep the Obsidian Markdown debug command hidden from public `--help` output.
 - Replace the configuration page's debug wording for exported ini with backup and migration wording.
+- Keep the example configuration focused on the current Notion and Obsidian targets.
 
 ## 0.2.4 - 2026-07-06
 
