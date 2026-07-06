@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Add a Windows CI workflow for console builds, app self-tests, and installer guard checks.
+
 ## 0.2.5 - 2026-07-06
 
 - Guard release installer builds when the current VERSION tag already exists on a different commit.

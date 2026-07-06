@@ -16,6 +16,8 @@
   - `cmake --build build --config Release`
 - 发版门禁：
   - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -CheckOnly`
+- 开发分支门禁快检：
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -CheckOnly -AllowUnreleased -AllowExistingVersion`
 - 生成安装包：
   - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1`
 
@@ -25,6 +27,7 @@
 - 通用 dry run：`.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt`
 - Obsidian 调试输出：`.\build-console\Release\notion_clipboard_win.exe --dry-run-obsidian-file .\test\bf.txt .\test\bf.obsidian.md`
 - 安装包脚本回归：`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-build-installer.ps1`
+- CI：`.github/workflows/ci.yml` 在 Windows 上运行 console 构建、自测、门禁快检和安装包脚本回归。
 
 ## 安全
 

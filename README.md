@@ -202,6 +202,8 @@ cmake --build build-console --config Release
 .\build-console\Release\notion_clipboard_win.exe --self-test
 ```
 
+CI 会在 Windows 上执行 console 构建、`--self-test`、发版门禁快检和安装包脚本回归。提交前建议至少跑上面的自测。
+
 发版前检查：
 
 ```powershell
@@ -209,6 +211,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps
 ```
 
 这个命令只检查发版门禁，不会构建安装包。如果 `CHANGELOG.md` 仍有 `Unreleased` 条目，或 `VERSION` 对应的 tag 已存在但不在当前提交上，命令会失败。
+
+普通开发分支只想确认脚本本身可运行时，可以使用：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -CheckOnly -AllowUnreleased -AllowExistingVersion
+```
 
 生成安装包：
 

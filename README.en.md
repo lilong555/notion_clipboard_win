@@ -202,6 +202,8 @@ cmake --build build-console --config Release
 .\build-console\Release\notion_clipboard_win.exe --self-test
 ```
 
+CI runs the console build, `--self-test`, release-guard check, and installer-guard regression tests on Windows. Before submitting changes, run at least the self-test above.
+
 Check release guards before packaging:
 
 ```powershell
@@ -209,6 +211,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps
 ```
 
 This only checks release gates and does not build the installer. It fails if `CHANGELOG.md` still has `Unreleased` entries, or if the `VERSION` tag already exists on a different commit.
+
+For normal development branches, use this to check that the script itself still works:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -CheckOnly -AllowUnreleased -AllowExistingVersion
+```
 
 Build the installer:
 

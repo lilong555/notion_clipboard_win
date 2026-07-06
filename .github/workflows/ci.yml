@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  windows:
+    name: Windows build and self-test
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Configure console build
+        run: cmake -S . -B build-console -DNOTION_CLIPBOARD_WIN_GUI=OFF
+
+      - name: Build console app
+        run: cmake --build build-console --config Release
+
+      - name: Run app self-tests
+        run: .\build-console\Release\notion_clipboard_win.exe --self-test
+
+      - name: Check installer release guards
+        shell: pwsh
+        run: ./scripts/build-installer.ps1 -CheckOnly -AllowUnreleased -AllowExistingVersion
+
+      - name: Run installer guard regression tests
+        shell: pwsh
+        run: ./scripts/test-build-installer.ps1
