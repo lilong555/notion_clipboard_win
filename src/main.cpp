@@ -44,6 +44,7 @@ using ncw::CreateGeneratedAppIcon;
 using ncw::LastErrorMessage;
 using ncw::AppConfig;
 using ncw::AtomicWriteFile;
+using ncw::BuildObsidianMarkdownPreview;
 using ncw::BuildTextBlocks;
 using ncw::BuildTitleFromContent;
 using ncw::CliOptions;
@@ -64,7 +65,6 @@ using ncw::LoadConfig;
 using ncw::ModuleDirectory;
 using ncw::NowUnixMs;
 using ncw::NormalizeLineEndings;
-using ncw::NormalizeMarkdownForObsidian;
 using ncw::ParseHotkeyOrThrow;
 using ncw::ParseCli;
 using ncw::ParseUploadTargets;
@@ -2567,7 +2567,8 @@ int RetryFailedJobUrlAndOpenCenter(const std::string &url)
     return 0;
 }
 
-int RunObsidianDryRunFile(const std::filesystem::path &input_path, const std::filesystem::path &output_path)
+int RunObsidianDryRunFile(const std::filesystem::path &input_path, const std::filesystem::path &output_path,
+                          const std::string &obsidian_tags, bool quiet = false)
 {
     const std::string input = Trim(NormalizeLineEndings(ReadWholeFile(input_path)));
     if (input.empty())
@@ -2575,7 +2576,7 @@ int RunObsidianDryRunFile(const std::filesystem::path &input_path, const std::fi
         throw std::runtime_error("输入文件没有可转换的文本");
     }
 
-    std::string output = NormalizeMarkdownForObsidian(input);
+    std::string output = BuildObsidianMarkdownPreview(input, obsidian_tags);
     if (output.empty())
     {
         throw std::runtime_error("Obsidian 预览内容为空");
@@ -2586,8 +2587,11 @@ int RunObsidianDryRunFile(const std::filesystem::path &input_path, const std::fi
     }
 
     AtomicWriteFile(output_path, output);
-    std::cout << "obsidian dry-run: title=" << BuildTitleFromContent(input) << "，bytes=" << output.size()
-              << "，output=" << WideToUtf8(output_path.wstring()) << "\n";
+    if (!quiet)
+    {
+        std::cout << "obsidian dry-run: title=" << BuildTitleFromContent(input) << "，bytes=" << output.size()
+                  << "，output=" << WideToUtf8(output_path.wstring()) << "\n";
+    }
     return 0;
 }
 
@@ -2687,6 +2691,23 @@ int RunMainSelfTest()
             if (parsed.dry_run_obsidian_input_path.empty() || parsed.dry_run_obsidian_output_path.empty())
             {
                 fail("dry-run-obsidian-file paths were not parsed");
+            }
+        }
+        {
+            const fs::path input_path = root / L"obsidian-preview-input.md";
+            const fs::path output_path = root / L"obsidian-preview-output.md";
+            AtomicWriteFile(input_path,
+                            "预览标题\n\n"
+                            "> 如果 DP 转移是\n"
+                            "> [\n"
+                            "> dp[i]=\\min_j{上一层dp[j]+cost(j,i)}\n"
+                            "> ]\n");
+            RunObsidianDryRunFile(input_path, output_path, "#算法 cpp", true);
+            const std::string preview = ReadWholeFile(output_path);
+            if (preview.find("---\ntags:\n  - \"算法\"\n  - \"cpp\"\n---\n\n# 预览标题") != 0 ||
+                preview.find("> $$\n> dp[i]=\\min_j{上一层dp[j]+cost(j,i)}\n> $$") == std::string::npos)
+            {
+                fail("dry-run-obsidian-file did not write full Obsidian preview");
             }
         }
 
@@ -2968,7 +2989,9 @@ int AppMain(int argc, wchar_t **argv)
     }
     if (!cli.dry_run_obsidian_input_path.empty())
     {
-        return RunObsidianDryRunFile(cli.dry_run_obsidian_input_path, cli.dry_run_obsidian_output_path);
+        const AppConfig config = LoadConfig(cli.config_path);
+        return RunObsidianDryRunFile(cli.dry_run_obsidian_input_path, cli.dry_run_obsidian_output_path,
+                                     config.obsidian_tags);
     }
 
     AppConfig config = LoadConfig(cli.config_path);

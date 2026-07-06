@@ -208,7 +208,7 @@ cmake --build build-console --config Release
 .\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
 ```
 
-生成 Obsidian Markdown 预览文件：
+生成 Obsidian Markdown 预览文件，用来检查公式、引用块和标签 front matter：
 
 ```powershell
 .\build-console\Release\notion_clipboard_win.exe --dry-run-obsidian-file .\test\bf.txt .\test\bf.obsidian.md
