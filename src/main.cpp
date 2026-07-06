@@ -351,10 +351,18 @@ void WriteRecentUploadResultReport(const std::filesystem::path &path, const Uplo
     }
 
     constexpr std::size_t kMaxRecentUploadReportBytes = 128ull * 1024ull;
-    const std::string heading = "# Recent Upload Results\n\n";
+    const std::string heading = "# Recent Save Results\n\n";
     if (previous.rfind(heading, 0) == 0)
     {
         previous.erase(0, heading.size());
+    }
+    else
+    {
+        const std::string legacy_heading = "# Recent Upload Results\n\n";
+        if (previous.rfind(legacy_heading, 0) == 0)
+        {
+            previous.erase(0, legacy_heading.size());
+        }
     }
     std::string content = heading + entry.str() + previous;
     if (content.size() > kMaxRecentUploadReportBytes)
@@ -650,7 +658,7 @@ private:
     {
         if (logger_ != nullptr)
         {
-            logger_->Info("上传线程已启动");
+            logger_->Info("保存线程已启动");
         }
 
         while (!stop_.load())
@@ -672,7 +680,7 @@ private:
                 queue_->MarkSuccess(path);
                 if (logger_ != nullptr)
                 {
-                    logger_->Info("上传成功: " + job.id + (job.remote_url.empty() ? "" : " -> " + job.remote_url));
+                    logger_->Info("保存成功: " + job.id + (job.remote_url.empty() ? "" : " -> " + job.remote_url));
                 }
                 EmitResult(job, true, "");
             }
@@ -690,7 +698,7 @@ private:
 
         if (logger_ != nullptr)
         {
-            logger_->Info("上传线程已停止");
+            logger_->Info("保存线程已停止");
         }
     }
 
@@ -2039,14 +2047,14 @@ int RunOnce(const AppConfig &config, PersistentQueue *queue, UploadTarget *targe
         try
         {
             target->ProcessJob(&target_job, [] {});
-            logger->Info("上传成功: " + target_job.id + " [" + target_name + "]" +
+            logger->Info("保存成功: " + target_job.id + " [" + target_name + "]" +
                          (target_job.remote_url.empty() ? "" : " -> " + target_job.remote_url));
         }
         catch (const UploadFailure &ex)
         {
             target_job.last_error = ex.what();
             queue->Enqueue(target_job);
-            logger->Error("单次上传失败，任务已保存到队列: [" + target_name + "] " + std::string(ex.what()));
+            logger->Error("单次保存失败，任务已保存到队列: [" + target_name + "] " + std::string(ex.what()));
             result = std::max(result, ex.retryable() ? 2 : 3);
         }
     }
@@ -2685,7 +2693,7 @@ int RunMainSelfTest()
         failed_job.remote_url.clear();
         WriteRecentUploadResultReport(report_path, failed_job, false, "missing data_source_id");
         const std::string report = ReadWholeFile(report_path);
-        if (report.find("# Recent Upload Results") != 0 ||
+        if (report.find("# Recent Save Results") != 0 ||
             report.find("FAILED - notion") == std::string::npos ||
             report.find("- Error: missing data_source_id") == std::string::npos ||
             report.find("SUCCESS - notion") == std::string::npos ||
