@@ -272,6 +272,27 @@ std::filesystem::path LastObsidianUploadPath(const AppConfig &config)
     return config.state_dir / L"last-obsidian-upload.ini";
 }
 
+constexpr std::size_t kMaxRecentUploadReportBytes = 128ull * 1024ull;
+
+std::string TrimRecentUploadReportToLimit(std::string content)
+{
+    if (content.size() <= kMaxRecentUploadReportBytes)
+    {
+        return content;
+    }
+
+    const std::size_t boundary = content.rfind("\n## ", kMaxRecentUploadReportBytes);
+    constexpr std::size_t kHeadingBytes = sizeof("# Recent Save Results\n\n") - 1;
+    if (boundary != std::string::npos && boundary > kHeadingBytes)
+    {
+        content.resize(boundary);
+        return content;
+    }
+
+    content.resize(kMaxRecentUploadReportBytes);
+    return content;
+}
+
 void AppendUploadResultLocationFields(std::ostringstream *entry, const UploadJob &job)
 {
     if (job.target == "notion")
@@ -346,7 +367,6 @@ void WriteRecentUploadResultReport(const std::filesystem::path &path, const Uplo
         previous.clear();
     }
 
-    constexpr std::size_t kMaxRecentUploadReportBytes = 128ull * 1024ull;
     const std::string heading = "# Recent Save Results\n\n";
     if (previous.rfind(heading, 0) == 0)
     {
@@ -360,11 +380,7 @@ void WriteRecentUploadResultReport(const std::filesystem::path &path, const Uplo
             previous.erase(0, legacy_heading.size());
         }
     }
-    std::string content = heading + entry.str() + previous;
-    if (content.size() > kMaxRecentUploadReportBytes)
-    {
-        content.resize(kMaxRecentUploadReportBytes);
-    }
+    std::string content = TrimRecentUploadReportToLimit(heading + entry.str() + previous);
     AtomicWriteFile(path, content);
 }
 
@@ -2484,6 +2500,26 @@ int RunMainSelfTest()
             report.find("SUCCESS - notion") > report.find("SUCCESS - obsidian"))
         {
             fail("recent upload result report content mismatch");
+        }
+
+        const fs::path bounded_report_path = root / L"bounded-recent-upload-results.md";
+        AtomicWriteFile(bounded_report_path,
+                        "# Recent Save Results\n\n"
+                        "## 2026-07-05T00:02:00Z - SUCCESS - notion\n\n"
+                        "- Title: Old Oversized Record\n"
+                        "- Target: notion\n"
+                        "- Job: old-oversized\n"
+                        "- Error: " +
+                            std::string(200000, 'x') + "\n\n");
+        UploadJob bounded_job = MakeUploadJob("Bounded Title\n\nBody", "notion");
+        WriteRecentUploadResultReport(bounded_report_path, bounded_job, true, "");
+        const std::string bounded_report = ReadWholeFile(bounded_report_path);
+        if (bounded_report.size() > kMaxRecentUploadReportBytes ||
+            bounded_report.find("# Recent Save Results\n\n## ") != 0 ||
+            bounded_report.find("- Title: Bounded Title") == std::string::npos ||
+            bounded_report.find("Old Oversized Record") != std::string::npos)
+        {
+            fail("recent upload result report was not trimmed at a record boundary");
         }
 
         const fs::path last_obsidian_path = root / L"last-obsidian-upload.ini";
