@@ -508,13 +508,14 @@ const iniBox=document.getElementById("ini");
 const downloadLink=document.getElementById("download");
 let downloadUrl="";
 function targetValue(el){return el.dataset.targetOption||el.value;}
+function targetLabel(value){return value==="notion"?"Notion":value==="obsidian"?"Obsidian":value;}
 targetChecks.forEach(el=>el.checked=initialTargets.has(targetValue(el)));
 if(!targetChecks.some(el=>el.checked)&&targetChecks.length)targetChecks[0].checked=true;
 function val(key){const el=document.querySelector(`[data-key="${key}"]`); if(!el)return ""; return el.type==="checkbox"?(el.checked?"true":"false"):el.value.trim();}
 function selectedTargets(){return targetChecks.filter(el=>el.checked).map(targetValue);}
 function isHotkeyTextValid(text){const tokens=(text||"").split("+").map(part=>part.trim()).filter(Boolean); if(tokens.length<2)return false; let modifiers=0; let keys=0; const keyNames=new Set(["backspace","delete","del","down","end","enter","esc","escape","home","insert","ins","left","pagedown","pageup","pgdn","pgup","pause","printscreen","prtsc","right","space","tab","up"]); for(const raw of tokens){const token=raw.toLowerCase(); if(token==="ctrl"||token==="control"||token==="alt"||token==="shift"||token==="win"||token==="windows"||token==="super"||token==="meta"){modifiers++; continue;} if(/^[a-z0-9]$/.test(token)||/^f([1-9]|1[0-9]|2[0-4])$/.test(token)||keyNames.has(token)){keys++; continue;} return false;} return modifiers>0&&keys===1;}
 function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个保存位置"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要数据源 ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian 仓库不能为空"); return problems;}
-function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后会写入："+selected.join("、")); applyButton.disabled=problems.length>0;}
+function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后会写入："+selected.map(targetLabel).join("、")); applyButton.disabled=problems.length>0;}
 function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; iniBox.value=text; if(downloadUrl)URL.revokeObjectURL(downloadUrl); downloadUrl=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); downloadLink.href=downloadUrl; updateStatus(); updateObsidianLocation();}
 function protocolUrl(action){return "notion-clipboard-win:/"+action+"/?path="+encodeURIComponent(configPath);}
 function protocolUrlWithOutput(action){return protocolUrl(action)+"&content="+encodeURIComponent(iniBox.value);}
@@ -638,7 +639,8 @@ int RunConfigPageSelfTest()
                                         "CUSTOM_PICKER_VALUE", "id=\"obsidianLocation\"", "Obsidian 写入位置：",
                                         "joinObsidianPath(vault,folder)", "updateObsidianLocation()",
                                         "refreshObsidianFolders()", "重新扫描 Obsidian",
-                                        "protocolUrl(\"open-config-page\")", "targetValue(el)", "syncTargets()",
+                                        "protocolUrl(\"open-config-page\")", "targetValue(el)", "targetLabel(value)",
+                                        "selected.map(targetLabel).join(\"、\")", "syncTargets()",
                                          "保存配置", "高级：查看或导出 ini", "这里包含 token，仅用于手动备份或调试。",
                                          "id=\"ini\" readonly spellcheck=\"false\"", "URL.revokeObjectURL(downloadUrl)",
                                          "id=\"copy\"", "复制配置",
