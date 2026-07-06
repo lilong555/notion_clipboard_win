@@ -450,7 +450,7 @@ bool WriteConfigDiagnosticsReport(const std::filesystem::path &path, const AppCo
     std::ostringstream report;
     report << "# Configuration Diagnostics\n\n"
            << "- Generated: " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
-           << "- Upload target: " << ReportLineValue(config.upload_target) << "\n"
+           << "- Save target: " << ReportLineValue(config.upload_target) << "\n"
            << "- State dir: " << ReportLineValue(WideToUtf8(config.state_dir.wstring())) << "\n\n";
 
     if (targets.empty())
