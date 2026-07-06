@@ -208,7 +208,7 @@ Dry-run conversion:
 .\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
 ```
 
-Generate an Obsidian Markdown preview file to inspect formulas, blockquotes, and tag front matter:
+Generate an Obsidian Markdown debug file to inspect formulas, blockquotes, and tag front matter:
 
 ```powershell
 .\build-console\Release\notion_clipboard_win.exe --dry-run-obsidian-file .\test\bf.txt .\test\bf.obsidian.md

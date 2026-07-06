@@ -76,7 +76,7 @@ namespace
 {
 std::string SupportedUploadTargetsText()
 {
-    return "notion、obsidian（推荐稳定）；markdown_file、webhook、yuque、feishu_doc 为实验/未来兼容目标";
+    return "notion、obsidian";
 }
 
 void ApplyConfigValue(AppConfig *config, const std::string &key, const std::string &value)
@@ -552,7 +552,7 @@ void PrintHelp()
               << "  notion_clipboard_win.exe --dry-run --once             读取剪贴板但不上传\n\n"
               << "  notion_clipboard_win.exe --self-test                  运行本地转换回归测试\n\n"
               << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不上传\n\n"
-              << "  notion_clipboard_win.exe --dry-run-obsidian-file in out 生成 Obsidian Markdown 预览\n\n"
+              << "  notion_clipboard_win.exe --dry-run-obsidian-file in out 调试生成 Obsidian Markdown 文件\n\n"
               << "  notion_clipboard_win.exe --test-upload-url URL        使用配置页内容测试上传一次\n\n"
               << "  notion_clipboard_win.exe --open-upload-center-url URL 打开上传中心\n\n"
               << "  notion_clipboard_win.exe --retry-failed-job-url URL   重试单个 failed 任务\n\n"
@@ -562,7 +562,7 @@ void PrintHelp()
               << "  Ctrl+Shift+B\n\n"
               << "上传后端:\n"
               << "  upload_target=notion 或 upload_target=notion,obsidian\n"
-              << "  当前主路径: Notion、Obsidian；" << SupportedUploadTargetsText() << "\n\n"
+              << "  支持: " << SupportedUploadTargetsText() << "\n\n"
               << "配置默认路径:\n"
               << "  " << WideToUtf8(DefaultConfigPath().wstring()) << "\n";
 }
