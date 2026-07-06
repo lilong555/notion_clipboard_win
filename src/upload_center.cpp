@@ -321,6 +321,17 @@ std::string PreferredOpenUrl(const RecentRecord &record)
     {
         return record.notion_url;
     }
+    if (record.target == "obsidian")
+    {
+        if (!record.local_file_uri.empty())
+        {
+            return record.local_file_uri;
+        }
+        if (!record.obsidian_file.empty())
+        {
+            return BuildFileUriFromUtf8Path(record.obsidian_file);
+        }
+    }
     if (!record.obsidian_uri.empty())
     {
         return record.obsidian_uri;
@@ -861,6 +872,13 @@ int RunUploadCenterSelfTest()
                         "- Target: notion\n"
                         "- Job: job-1\n"
                         "- Notion URL: <https://www.notion.so/page>\n\n"
+                        "## 2026-07-05T00:00:30Z - SUCCESS - obsidian\n\n"
+                        "- Title: Obsidian Saved Title\n"
+                        "- Target: obsidian\n"
+                        "- Job: job-ob\n"
+                        "- Obsidian File: E:\\vault\\Inbox\\Worker Callback.md\n"
+                        "- Local File URI: <file:///E:/vault/Inbox/Worker%20Callback.md>\n"
+                        "- Obsidian URI: <obsidian://open?vault=Test&file=Inbox%2FWorker%20Callback.md>\n\n"
                         "## 2026-07-05T00:01:00Z - FAILED - obsidian\n\n"
                         "- Title: Failed Title\n"
                         "- Target: obsidian\n"
@@ -902,6 +920,7 @@ int RunUploadCenterSelfTest()
         const fs::path page = WriteUploadCenterPage(config, root / L"notion_clipboard_win.ini");
         const std::string html = ReadWholeFile(page);
         for (const char *needle : {"保存记录", "Upload Center Title", "https://www.notion.so/page", "vault missing",
+                                    "Obsidian Saved Title", "file:///E:/vault/Inbox/Worker%20Callback.md",
                                     "Queued Title", "temporary error", "Failed Queue Title", "permanent error",
                                     "页面是打开时生成的本地快照", "data-copy=", "本地保存记录和重试队列",
                                     "open-upload-center", "刷新状态", "retry-failed-uploads", "重试失败任务",
@@ -922,6 +941,13 @@ int RunUploadCenterSelfTest()
             {
                 fail(std::string("found debug-only upload center content: ") + needle);
             }
+        }
+        const std::size_t file_link_pos = html.find("href=\"file:///E:/vault/Inbox/Worker%20Callback.md\"");
+        const std::size_t obsidian_uri_pos =
+            html.find("href=\"obsidian://open?vault=Test&amp;file=Inbox%2FWorker%20Callback.md\"");
+        if (file_link_pos == std::string::npos || obsidian_uri_pos != std::string::npos)
+        {
+            fail("obsidian upload center open action did not prefer the local Markdown file");
         }
 
         if (RetryFailedUpload(config, "../failed.job") != 0)
