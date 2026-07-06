@@ -4,6 +4,7 @@
 
 - Show an explicit Obsidian vault chooser placeholder when no vault has been configured yet.
 - Hide the save-records bulk retry action when there are no failed jobs to retry.
+- Add a fallback copy path for local configuration and save-records pages when the browser Clipboard API is unavailable.
 
 ## 0.2.6 - 2026-07-06
 

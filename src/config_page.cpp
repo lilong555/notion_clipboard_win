@@ -525,6 +525,7 @@ function isHotkeyTextValid(text){const tokens=(text||"").split("+").map(part=>pa
 function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个保存位置"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要数据源 ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian 仓库不能为空"); return problems;}
 function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后会写入："+selected.map(targetLabel).join("、")); applyButton.disabled=problems.length>0;}
 function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; iniBox.value=text; if(downloadUrl)URL.revokeObjectURL(downloadUrl); downloadUrl=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); downloadLink.href=downloadUrl; updateStatus(); updateObsidianLocation();}
+async function copyText(text){try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(text); return true;}}catch(e){} const area=document.createElement("textarea"); area.value=text; area.setAttribute("readonly",""); area.style.position="fixed"; area.style.left="-9999px"; area.style.top="0"; document.body.appendChild(area); area.focus(); area.select(); area.setSelectionRange(0,area.value.length); let ok=false; try{ok=document.execCommand("copy");}catch(e){ok=false;} document.body.removeChild(area); return ok;}
 function protocolUrl(action){return "notion-clipboard-win:/"+action+"/?path="+encodeURIComponent(configPath);}
 function protocolUrlWithOutput(action){return protocolUrl(action)+"&content="+encodeURIComponent(iniBox.value);}
 function syncTargets(){const selected=selectedTargets(); target.value=selected.join(","); build();}
@@ -548,7 +549,7 @@ applyButton.addEventListener("click",()=>{build(); const problems=validateConfig
 document.getElementById("testUpload").addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送测试保存请求，结果会写入并打开保存记录。"; location.href=protocolUrlWithOutput("test-upload");});
 document.getElementById("openUploadCenter").addEventListener("click",()=>{location.href=protocolUrl("open-upload-center");});
 document.getElementById("refreshObs").addEventListener("click",()=>{build(); statusBox.className="status ok"; statusBox.textContent="已请求按当前页面内容重新扫描 Obsidian；这不会保存配置。"; location.href=protocolUrlWithOutput("open-config-page"); setTimeout(()=>location.reload(),1200);});
-document.getElementById("copy").addEventListener("click",async()=>{build(); await navigator.clipboard.writeText(iniBox.value);});
+document.getElementById("copy").addEventListener("click",async()=>{build(); const ok=await copyText(iniBox.value); statusBox.className="status "+(ok?"ok":"error"); statusBox.textContent=ok?"配置已复制。":"复制失败，请在下方 ini 文本框中手动全选复制。";});
 const hotkeyInput=document.getElementById("hotkeyInput");
 const hotkeyHelp=document.getElementById("hotkeyHelp");
 const recordHotkeyButton=document.getElementById("recordHotkey");
@@ -668,6 +669,7 @@ int RunConfigPageSelfTest()
                                          "保存配置", "高级：查看或导出 ini", "这里包含 token，仅用于手动备份或迁移配置。",
                                          "配置文件：",
                                          "id=\"ini\" readonly spellcheck=\"false\"", "URL.revokeObjectURL(downloadUrl)",
+                                         "copyText(text)", "document.execCommand(\"copy\")",
                                          "id=\"copy\"", "复制配置",
                                          "id=\"download\"", "下载 ini", "id=\"testUpload\"", "测试保存",
                                          "protocolUrlWithOutput(\"test-upload\")",

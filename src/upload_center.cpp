@@ -848,7 +848,8 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:8px;m
     html << R"(
 </main>
 <script>
-document.querySelectorAll("[data-copy]").forEach(button=>button.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(button.dataset.copy||""); const old=button.textContent; button.textContent="已复制"; setTimeout(()=>button.textContent=old,1200);}catch(e){button.textContent="复制失败";}}));
+async function copyText(text){try{if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(text); return true;}}catch(e){} const area=document.createElement("textarea"); area.value=text; area.setAttribute("readonly",""); area.style.position="fixed"; area.style.left="-9999px"; area.style.top="0"; document.body.appendChild(area); area.focus(); area.select(); area.setSelectionRange(0,area.value.length); let ok=false; try{ok=document.execCommand("copy");}catch(e){ok=false;} document.body.removeChild(area); return ok;}
+document.querySelectorAll("[data-copy]").forEach(button=>button.addEventListener("click",async()=>{const old=button.textContent; const ok=await copyText(button.dataset.copy||""); button.textContent=ok?"已复制":"复制失败"; setTimeout(()=>button.textContent=old,1200);}));
 </script>
 </body></html>
 )";
@@ -935,6 +936,7 @@ int RunUploadCenterSelfTest()
                                     "Obsidian Saved Title", "file:///E:/vault/Inbox/Worker%20Callback.md",
                                     "Queued Title", "temporary error", "Failed Queue Title", "permanent error",
                                     "页面是打开时生成的本地快照", "data-copy=", "本地保存记录和重试队列",
+                                    "copyText(text)", "document.execCommand(\"copy\")",
                                     "open-upload-center", "刷新状态", "retry-failed-uploads", "重试失败任务",
                                     "retry-failed-job", "重试此项", "成功", "失败", ">Notion</td>",
                                     ">Obsidian</td>", "已重试", "等待自动重试",
