@@ -991,8 +991,8 @@ public:
             logger_->Info("托盘进程已启动，hotkey=" + hotkey_spec_.display);
         }
         const std::wstring startup_message =
-            hotkey_enabled_ ? L"后台进程已启动，按 " + Utf8ToWide(hotkey_spec_.display) + L" 上传剪贴板。"
-                            : L"后台进程已启动，可从托盘菜单上传当前剪贴板。";
+            hotkey_enabled_ ? L"后台进程已启动，按 " + Utf8ToWide(hotkey_spec_.display) + L" 保存剪贴板。"
+                            : L"后台进程已启动，可从托盘菜单保存当前剪贴板。";
         ShowNotification(L"Notion Clipboard Win", startup_message);
         const bool opened_config_page_on_start = MaybeOpenConfigPageOnStart();
         MaybeShowStartupConfigError(opened_config_page_on_start);
@@ -1201,7 +1201,7 @@ private:
         const std::wstring note_title = TruncateWide(Utf8ToWide(job.title), 64);
         if (success)
         {
-            notice->message = target + L" 上传成功";
+            notice->message = target + L" 保存成功";
             if (!note_title.empty())
             {
                 notice->message += L"：" + note_title;
@@ -1214,7 +1214,7 @@ private:
         }
         else
         {
-            notice->message = target + L" 上传失败";
+            notice->message = target + L" 保存失败";
             if (!note_title.empty())
             {
                 notice->message += L"：" + note_title;
@@ -1272,7 +1272,7 @@ private:
         }
 
         const std::wstring hotkey_label = L"热键: " + Utf8ToWide(hotkey_spec_.display);
-        AppendMenuW(menu, MF_STRING, kMenuUploadNow, L"上传当前剪贴板");
+        AppendMenuW(menu, MF_STRING, kMenuUploadNow, L"保存当前剪贴板");
         AppendMenuW(menu, MF_GRAYED, kMenuHotkeyStatus, hotkey_label.c_str());
         AppendMenuW(menu, MF_STRING | (hotkey_enabled_ ? MF_CHECKED : MF_UNCHECKED), kMenuToggleHotkey, L"启用热键");
         AppendMenuW(menu, MF_STRING | (recording_hotkey_ ? MF_GRAYED : MF_ENABLED), kMenuRecordHotkey, L"录制热键...");
