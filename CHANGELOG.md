@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.4 - 2026-07-06
+
 - Remove obsolete configuration diagnostics protocol handlers and dead tray command paths after the UI cleanup.
 - Keep the configuration page focused on Notion and Obsidian by removing the visible future-platform notice.
 - Hide internal configuration-page protocol arguments from the command-line help.
