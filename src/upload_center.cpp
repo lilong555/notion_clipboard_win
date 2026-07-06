@@ -727,9 +727,6 @@ std::filesystem::path WriteUploadCenterPage(const AppConfig &config, const std::
                   return a.job.id < b.job.id;
               });
 
-    const std::string state_dir = WideToUtf8(config.state_dir.wstring());
-    const std::string state_dir_uri = BuildFileUriFromUtf8Path(state_dir);
-    const std::string recent_uri = BuildFileUriFromUtf8Path(WideToUtf8(recent_path.wstring()));
     const std::string refresh_url = ProtocolUrl("open-upload-center", config_path);
     const std::string retry_failed_url = ProtocolUrl("retry-failed-uploads", config_path);
     const std::size_t success_count = std::count_if(recent_records.begin(), recent_records.end(), [](const RecentRecord &record)
@@ -759,11 +756,8 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:8px;m
 </style>
 </head>
 <body>
-<header><div class="bar"><div><h1>上传中心</h1><div class="path">状态目录：)"
-         << HtmlEscape(state_dir) << R"(</div></div><div class="toolbar"><a class="button" href=")"
+<header><div class="bar"><div><h1>上传中心</h1><div class="path">本地上传记录和重试队列</div></div><div class="toolbar"><a class="button" href=")"
          << HtmlEscape(refresh_url) << R"(">刷新状态</a><a class="button" href=")"
-         << HtmlEscape(state_dir_uri) << R"(">打开状态目录</a><a class="button" href=")"
-         << HtmlEscape(recent_uri) << R"(">原始报告</a><a class="button" href=")"
          << HtmlEscape(retry_failed_url)
          << R"HTML(" onclick="return confirm('将 failed 目录中的任务移回等待队列并立即重试。继续吗？')">重试失败任务</a></div></div></header>
 <main class="wrap">
@@ -859,14 +853,21 @@ int RunUploadCenterSelfTest()
         const fs::path page = WriteUploadCenterPage(config, root / L"notion_clipboard_win.ini");
         const std::string html = ReadWholeFile(page);
         for (const char *needle : {"上传中心", "Upload Center Title", "https://www.notion.so/page", "vault missing",
-                                   "Queued Title", "temporary error", "Failed Queue Title", "permanent error",
-                                   "页面是打开时生成的本地快照", "data-copy=", "打开状态目录", "原始报告",
-                                   "open-upload-center", "刷新状态", "retry-failed-uploads", "重试失败任务",
-                                   "retry-failed-job", "重试此项"})
+                                    "Queued Title", "temporary error", "Failed Queue Title", "permanent error",
+                                    "页面是打开时生成的本地快照", "data-copy=", "本地上传记录和重试队列",
+                                    "open-upload-center", "刷新状态", "retry-failed-uploads", "重试失败任务",
+                                    "retry-failed-job", "重试此项"})
         {
             if (html.find(needle) == std::string::npos)
             {
                 fail(std::string("missing expected upload center content: ") + needle);
+            }
+        }
+        for (const char *needle : {"打开状态目录", "原始报告"})
+        {
+            if (html.find(needle) != std::string::npos)
+            {
+                fail(std::string("found debug-only upload center content: ") + needle);
             }
         }
 

@@ -483,7 +483,7 @@ textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-si
     AddSectionEnd(&html);
 
     html << R"(
-</div><aside class="output"><h2>输出 ini</h2><p class="hint">页面会输出包含 token 的完整配置。点击“应用并重启”会写入当前配置文件并重启托盘进程。</p><div id="status" class="status" role="status"></div><div class="actions"><button id="apply">应用并重启</button><button id="validateOutputConfig" class="secondary">验证配置</button><button id="testUpload" class="secondary">测试上传</button><button id="openConfigDiagnostics" class="secondary">查看配置诊断</button><button id="openUploadCenter" class="secondary">上传中心</button><button id="refreshObs">重新扫描 Obsidian</button><button id="copy">复制配置</button><a id="download" class="download secondary" download="notion_clipboard_win.ini">下载 ini</a><button id="reveal" class="secondary">显示/隐藏 token</button></div><textarea id="ini" spellcheck="false"></textarea></aside></main>
+</div><aside class="output"><h2>输出 ini</h2><p class="hint">页面会输出包含 token 的完整配置。点击“应用并重启”会写入当前配置文件并重启托盘进程。</p><div id="status" class="status" role="status"></div><div class="actions"><button id="apply">应用并重启</button><button id="testUpload" class="secondary">测试上传</button><button id="openUploadCenter" class="secondary">上传中心</button><button id="refreshObs">重新扫描 Obsidian</button><button id="copy">复制配置</button><a id="download" class="download secondary" download="notion_clipboard_win.ini">下载 ini</a><button id="reveal" class="secondary">显示/隐藏 token</button></div><textarea id="ini" spellcheck="false"></textarea></aside></main>
 <script>
 const order=["upload_target","notion_token","data_source_id","database_id","title_property_name","content_property_name","content_property_max_chars","created_time_property_name","obsidian_vault_dir","obsidian_folder","obsidian_tags","state_dir","hotkey","enable_hotkey","tray_notifications","start_with_windows","duplicate_suppression_ms","max_clipboard_bytes","min_request_interval_ms","append_batch_size","max_retry_attempts","http_retry_attempts"];
 const configPath=)"
@@ -529,9 +529,7 @@ document.querySelectorAll("[data-key]").forEach(el=>{el.addEventListener("input"
 document.querySelectorAll("[data-choice-target]").forEach(select=>select.addEventListener("change",()=>syncChoice(select)));
 document.querySelectorAll("[data-custom-key]").forEach(custom=>custom.addEventListener("input",()=>{const key=custom.dataset.customKey; const select=document.querySelector(`[data-choice-target="${key}"]`); const hidden=document.querySelector(`[data-key="${key}"]`); if(select&&select.value===CUSTOM_PICKER_VALUE&&hidden){hidden.value=custom.value.trim(); if(key==="obsidian_vault_dir")refreshObsidianFolders(); build();}}));
 applyButton.addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送配置给托盘应用，应用会校验、写入并重启。"; location.href="notion-clipboard-win:/apply-config/?path="+encodeURIComponent(configPath)+"&content="+encodeURIComponent(document.getElementById("ini").value);});
-document.getElementById("validateOutputConfig").addEventListener("click",()=>{build(); statusBox.className="status ok"; statusBox.textContent="已发送当前输出配置验证请求，报告会自动打开。"; location.href=protocolUrlWithOutput("validate-config");});
 document.getElementById("testUpload").addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送测试上传请求，结果会写入并打开上传中心。"; location.href=protocolUrlWithOutput("test-upload");});
-document.getElementById("openConfigDiagnostics").addEventListener("click",()=>{location.href=protocolUrl("open-config-diagnostics");});
 document.getElementById("openUploadCenter").addEventListener("click",()=>{location.href=protocolUrl("open-upload-center");});
 document.getElementById("refreshObs").addEventListener("click",()=>{location.href=protocolUrl("open-config-page"); setTimeout(()=>location.reload(),1200);});
 document.getElementById("copy").addEventListener("click",async()=>{build(); await navigator.clipboard.writeText(document.getElementById("ini").value);});
@@ -626,18 +624,13 @@ int RunConfigPageSelfTest()
                                        "normalizePathKey(path)", "findObsidianFolderGroup(vault)",
                                         "CUSTOM_PICKER_VALUE", "id=\"obsidianLocation\"", "Obsidian 写入位置：",
                                         "joinObsidianPath(vault,folder)", "updateObsidianLocation()",
-                                       "refreshObsidianFolders()", "重新扫描 Obsidian",
-                                       "protocolUrl(\"open-config-page\")", "targetValue(el)", "syncTargets()",
-                                        "id=\"validateOutputConfig\"", "验证配置",
-                                        "protocolUrlWithOutput(\"validate-config\")",
-                                        "已发送当前输出配置验证请求",
-                                        "id=\"testUpload\"", "测试上传",
-                                        "protocolUrlWithOutput(\"test-upload\")",
-                                        "已发送测试上传请求，结果会写入并打开上传中心。",
-                                        "id=\"openConfigDiagnostics\"", "查看配置诊断",
-                                        "id=\"openUploadCenter\"", "上传中心",
-                                        "protocolUrl(\"open-config-diagnostics\")",
-                                        "protocolUrl(\"open-upload-center\")",
+                                        "refreshObsidianFolders()", "重新扫描 Obsidian",
+                                        "protocolUrl(\"open-config-page\")", "targetValue(el)", "syncTargets()",
+                                         "id=\"testUpload\"", "测试上传",
+                                         "protocolUrlWithOutput(\"test-upload\")",
+                                         "已发送测试上传请求，结果会写入并打开上传中心。",
+                                         "id=\"openUploadCenter\"", "上传中心",
+                                         "protocolUrl(\"open-upload-center\")",
                                        "id=\"status\"", "validateConfig()", "applyButton.disabled",
                                        "配置完整。保存后将上传到：", "需要处理：",
                                        "id=\"hotkeyInput\"", "readonly aria-readonly=\"true\"", "id=\"recordHotkey\"",
@@ -659,7 +652,8 @@ int RunConfigPageSelfTest()
                                         "webhook_url", "markdown_output_dir", "enable_clipboard_listener",
                                         "自动监听剪贴板", "debounce_ms", "id=\"previewObsidian\"", "id=\"obsidianPreview\"",
                                         "预览 Obsidian Markdown", "preview-obsidian-clipboard",
-                                        "upload_initial_clipboard", "启动后上传当前剪贴板"})
+                                        "upload_initial_clipboard", "启动后上传当前剪贴板",
+                                        "id=\"validateOutputConfig\"", "查看配置诊断", "id=\"openConfigDiagnostics\""})
             {
                 if (html.find(needle) != std::string::npos)
                 {
