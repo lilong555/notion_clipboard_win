@@ -1,7 +1,19 @@
 *.bat text eol=crlf
 *.ps1 text eol=crlf
 *.iss text eol=crlf
+*.yml text eol=lf
+*.yaml text eol=lf
 *.cpp text eol=lf
+*.h text eol=lf
+*.rc text eol=lf
+*.rc.in text eol=lf
+*.cmake text eol=lf
+CMakeLists.txt text eol=lf
 *.txt text eol=lf
 *.md text eol=lf
 *.ini text eol=lf
+*.json text eol=lf
+*.ico binary
+*.png binary
+*.exe binary
+*.sha256 text eol=lf

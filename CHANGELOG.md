@@ -8,6 +8,7 @@
 - Gate future upload targets behind `NCW_ENABLE_EXPERIMENTAL_TARGETS` so stable configs stay focused on Notion and Obsidian.
 - Add GitHub issue forms for structured bug reports and feature requests.
 - Add a CI status badge and pull request template for contributor checks.
+- Expand `.gitattributes` coverage for source, workflow, script, and binary files.
 
 ## 0.2.5 - 2026-07-06
 
