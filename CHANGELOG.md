@@ -8,6 +8,7 @@
 - Move technical fields and raw ini output behind advanced sections, and keep debug-only Markdown preview and diagnostics out of the default UI.
 - Improve Obsidian Markdown output for quoted loose formulas, indexed formulas, and duplicate Markdown titles.
 - Avoid hardcoded installer versions in the README download instructions.
+- Guard installer builds when `CHANGELOG.md` still has Unreleased entries, with an explicit local-test override.
 
 ## 0.2.2 - 2026-07-05
 

@@ -1,11 +1,26 @@
 param(
-    [string]$Configuration = "Release"
+    [string]$Configuration = "Release",
+    [switch]$AllowUnreleased
 )
 
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
 $AppVersion = (Get-Content -Raw (Join-Path $Root "VERSION")).Trim()
+
+if ($AppVersion -notmatch '^\d+\.\d+\.\d+$') {
+    throw "VERSION must use x.y.z format. Current value: $AppVersion"
+}
+
+$ChangelogPath = Join-Path $Root "CHANGELOG.md"
+if ((Test-Path $ChangelogPath) -and -not $AllowUnreleased) {
+    $Changelog = Get-Content -Raw $ChangelogPath
+    $Unreleased = [regex]::Match($Changelog, '(?ms)^## Unreleased[ \t]*(?:\r?\n)+(.*?)(?=^##\s|\z)')
+    if ($Unreleased.Success -and $Unreleased.Groups[1].Value -match '(?m)^\s*-\s+\S') {
+        throw "CHANGELOG.md still has Unreleased entries. Update VERSION and move those entries to a release section before building a release installer, or pass -AllowUnreleased for a local test installer."
+    }
+}
+
 $CMakeCommand = Get-Command cmake -ErrorAction SilentlyContinue
 $CMakePath = if ($CMakeCommand) { $CMakeCommand.Source } else { $null }
 
@@ -23,7 +38,7 @@ if (-not $CMakePath) {
 }
 
 if (-not $CMakePath) {
-    throw "未找到 cmake。请安装 CMake，或安装带 C++ 工具的 Visual Studio。"
+    throw "cmake was not found. Install CMake or Visual Studio with C++ tools."
 }
 
 $IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
@@ -52,16 +67,16 @@ try {
     $RunningRelease = Get-CimInstance Win32_Process -Filter "name = 'notion_clipboard_win.exe'" |
         Where-Object { $_.ExecutablePath -and ((Resolve-Path $_.ExecutablePath).Path -eq (Resolve-Path $ReleaseExe -ErrorAction SilentlyContinue).Path) }
     if ($RunningRelease) {
-        throw "正在运行 build\$Configuration\notion_clipboard_win.exe，请先从托盘退出后再构建安装包。"
+        throw "build\$Configuration\notion_clipboard_win.exe is running. Exit it from the tray before building the installer."
     }
 
     & $CMakePath -S . -B build -DNOTION_CLIPBOARD_WIN_GUI=ON
     & $CMakePath --build build --config $Configuration
 
     if (-not $IsccPath) {
-        Write-Host "未找到 Inno Setup 编译器 ISCC.exe。"
-        Write-Host "可使用以下命令安装：winget install JRSoftware.InnoSetup"
-        throw "缺少 Inno Setup，无法生成安装包。"
+        Write-Host "Inno Setup compiler ISCC.exe was not found."
+        Write-Host "Install it with: winget install JRSoftware.InnoSetup"
+        throw "Inno Setup is required to build the installer."
     }
 
     New-Item -ItemType Directory -Force -Path ".\dist" | Out-Null
@@ -69,13 +84,13 @@ try {
 
     $Installer = ".\dist\NotionClipboardWin-$AppVersion-Setup.exe"
     if (-not (Test-Path $Installer)) {
-        throw "安装包未生成：$Installer"
+        throw "Installer was not generated: $Installer"
     }
 
     $Hash = Get-FileHash -Algorithm SHA256 $Installer
     "$($Hash.Hash)  $(Split-Path $Installer -Leaf)" | Set-Content -Encoding ASCII "$Installer.sha256"
-    Write-Host "已生成安装包：$Installer"
-    Write-Host "SHA256：$($Hash.Hash)"
+    Write-Host "Generated installer: $Installer"
+    Write-Host "SHA256: $($Hash.Hash)"
 }
 finally {
     Pop-Location
