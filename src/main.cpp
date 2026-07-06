@@ -986,16 +986,14 @@ public:
         {
             hotkey_enabled_ = RegisterUploadHotkey();
         }
-        if (startup_config_error_.empty() && config_->upload_initial_clipboard)
-        {
-            ProcessClipboard("启动读取", false);
-        }
-
         if (logger_ != nullptr)
         {
             logger_->Info("托盘进程已启动，hotkey=" + hotkey_spec_.display);
         }
-        ShowNotification(L"Notion Clipboard Win", L"后台进程已启动，按 " + Utf8ToWide(hotkey_spec_.display) + L" 上传剪贴板。");
+        const std::wstring startup_message =
+            hotkey_enabled_ ? L"后台进程已启动，按 " + Utf8ToWide(hotkey_spec_.display) + L" 上传剪贴板。"
+                            : L"后台进程已启动，可从托盘菜单上传当前剪贴板。";
+        ShowNotification(L"Notion Clipboard Win", startup_message);
         const bool opened_config_page_on_start = MaybeOpenConfigPageOnStart();
         MaybeShowStartupConfigError(opened_config_page_on_start);
 

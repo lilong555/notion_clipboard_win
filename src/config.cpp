@@ -184,10 +184,6 @@ void ApplyConfigValue(AppConfig *config, const std::string &key, const std::stri
     {
         config->duplicate_suppression_ms = std::max(0, ParseIntOrDefault(trimmed_value, 3000));
     }
-    else if (normalized == "upload_initial_clipboard")
-    {
-        config->upload_initial_clipboard = ParseBool(trimmed_value);
-    }
     else if (normalized == "markdown_output_dir")
     {
         if (!trimmed_value.empty())

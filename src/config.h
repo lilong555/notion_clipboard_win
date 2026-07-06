@@ -34,7 +34,6 @@ struct AppConfig
     bool start_with_windows = false;
     bool start_with_windows_configured = false;
     int duplicate_suppression_ms = 3000;
-    bool upload_initial_clipboard = false;
     std::filesystem::path markdown_output_dir;
     std::filesystem::path obsidian_vault_dir;
     std::string obsidian_folder = "Clipboard";
