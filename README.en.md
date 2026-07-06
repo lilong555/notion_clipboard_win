@@ -202,6 +202,22 @@ cmake --build build-console --config Release
 .\build-console\Release\notion_clipboard_win.exe --self-test
 ```
 
+Check release guards before packaging:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -CheckOnly
+```
+
+This only checks release gates and does not build the installer. It fails if `CHANGELOG.md` still has `Unreleased` entries, or if the `VERSION` tag already exists on a different commit.
+
+Build the installer:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1
+```
+
+The script runs self-tests, builds the GUI app, and writes the installer plus `.sha256` file to `dist/`. Inno Setup must be installed locally.
+
 Dry-run conversion:
 
 ```powershell

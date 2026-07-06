@@ -202,6 +202,22 @@ cmake --build build-console --config Release
 .\build-console\Release\notion_clipboard_win.exe --self-test
 ```
 
+发版前检查：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -CheckOnly
+```
+
+这个命令只检查发版门禁，不会构建安装包。如果 `CHANGELOG.md` 仍有 `Unreleased` 条目，或 `VERSION` 对应的 tag 已存在但不在当前提交上，命令会失败。
+
+生成安装包：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1
+```
+
+脚本会运行自测、构建 GUI 版，并在 `dist/` 生成安装包和 `.sha256` 校验文件。需要本机已安装 Inno Setup。
+
 转换 dry run：
 
 ```powershell

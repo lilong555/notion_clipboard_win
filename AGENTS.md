@@ -14,6 +14,10 @@
 - 无控制台后台版：
   - `cmake -S . -B build -DNOTION_CLIPBOARD_WIN_GUI=ON`
   - `cmake --build build --config Release`
+- 发版门禁：
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -CheckOnly`
+- 生成安装包：
+  - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1`
 
 ## 安全
 
