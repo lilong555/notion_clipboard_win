@@ -103,14 +103,10 @@ constexpr UINT kMenuToggleHotkey = 3003;
 constexpr UINT kMenuRecordHotkey = 3004;
 constexpr UINT kMenuToggleNotifications = 3005;
 constexpr UINT kMenuToggleAutoStart = 3006;
-constexpr UINT kMenuOpenConfig = 3008;
 constexpr UINT kMenuOpenLog = 3009;
-constexpr UINT kMenuOpenStateDir = 3010;
 constexpr UINT kMenuExit = 3011;
 constexpr UINT kMenuOpenConfigPage = 3012;
 constexpr UINT kMenuOpenRecentUploads = 3013;
-constexpr UINT kMenuValidateConfig = 3014;
-constexpr UINT kMenuOpenConfigDiagnostics = 3015;
 constexpr UINT kMenuOpenLastObsidian = 3016;
 constexpr const wchar_t *kAppDisplayName = L"Notion Clipboard Win";
 
@@ -271,11 +267,6 @@ std::filesystem::path LastObsidianUploadPath(const AppConfig &config)
     return config.state_dir / L"last-obsidian-upload.ini";
 }
 
-std::filesystem::path ConfigDiagnosticsPath(const AppConfig &config)
-{
-    return config.state_dir / L"config-diagnostics.md";
-}
-
 void AppendUploadResultLocationFields(std::ostringstream *entry, const UploadJob &job)
 {
     if (job.target == "notion")
@@ -418,73 +409,6 @@ std::optional<std::string> ReadStateValue(const std::filesystem::path &path, con
         }
     }
     return std::nullopt;
-}
-
-void AppendTargetConfigSummary(std::ostringstream *report, const AppConfig &config)
-{
-    if (config.upload_target == "notion")
-    {
-        *report << "- Token: " << (config.notion_token.empty() ? "missing" : "present") << "\n"
-                << "- Data Source ID: " << (config.data_source_id.empty() ? "(empty)" : ReportLineValue(config.data_source_id))
-                << "\n"
-                << "- Database ID: " << (config.database_id.empty() ? "(empty)" : ReportLineValue(config.database_id))
-                << "\n";
-        return;
-    }
-    if (config.upload_target == "obsidian")
-    {
-        *report << "- Vault: " << ReportLineValue(WideToUtf8(config.obsidian_vault_dir.wstring())) << "\n"
-                << "- Folder: " << (config.obsidian_folder.empty() ? "(vault root)" : ReportLineValue(config.obsidian_folder))
-                << "\n"
-                << "- Tags: " << (Trim(config.obsidian_tags).empty() ? "(none)" : ReportLineValue(config.obsidian_tags))
-                << "\n";
-        return;
-    }
-}
-
-bool WriteConfigDiagnosticsReport(const std::filesystem::path &path, const AppConfig &config, Logger *logger)
-{
-    const std::vector<std::string> targets = ParseUploadTargets(config.upload_target);
-    bool all_ok = !targets.empty();
-
-    std::ostringstream report;
-    report << "# Configuration Diagnostics\n\n"
-           << "- Generated: " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
-           << "- Save target: " << ReportLineValue(config.upload_target) << "\n"
-           << "- State dir: " << ReportLineValue(WideToUtf8(config.state_dir.wstring())) << "\n\n";
-
-    if (targets.empty())
-    {
-        report << "## Overall\n\n- Status: FAILED\n- Error: upload_target is empty\n\n";
-        AtomicWriteFile(path, report.str());
-        return false;
-    }
-
-    for (const std::string &target : targets)
-    {
-        AppConfig target_config = config;
-        target_config.upload_target = target;
-
-        report << "## " << ReportLineValue(target) << "\n\n";
-        AppendTargetConfigSummary(&report, target_config);
-
-        try
-        {
-            ValidateConfigOrThrow(target_config);
-            std::unique_ptr<UploadTarget> upload_target = CreateUploadTarget(target_config, logger);
-            upload_target->Validate();
-            report << "- Status: OK\n\n";
-        }
-        catch (const std::exception &ex)
-        {
-            all_ok = false;
-            report << "- Status: FAILED\n"
-                   << "- Error: " << ReportLineValue(ex.what()) << "\n\n";
-        }
-    }
-
-    AtomicWriteFile(path, report.str());
-    return all_ok;
 }
 
 HICON LoadApplicationIcon(HINSTANCE instance, int width, int height)
@@ -1323,17 +1247,8 @@ private:
         case kMenuToggleAutoStart:
             ToggleAutoStart();
             break;
-        case kMenuOpenConfig:
-            OpenConfig();
-            break;
         case kMenuOpenConfigPage:
             OpenConfigPage();
-            break;
-        case kMenuValidateConfig:
-            StartConfigDiagnostics();
-            break;
-        case kMenuOpenConfigDiagnostics:
-            OpenConfigDiagnostics();
             break;
         case kMenuOpenRecentUploads:
             OpenUploadCenter();
@@ -1343,9 +1258,6 @@ private:
             break;
         case kMenuOpenLog:
             OpenPath(config_->state_dir / L"notion-clipboard-win.log");
-            break;
-        case kMenuOpenStateDir:
-            OpenPath(config_->state_dir);
             break;
         case kMenuExit:
             Cleanup();
@@ -1572,39 +1484,6 @@ private:
                          auto_start_enabled_ ? L"开机自动启动已启用。" : L"开机自动启动已关闭。");
     }
 
-    void OpenConfig()
-    {
-        if (!fs::exists(config_path_))
-        {
-            try
-            {
-                const fs::path parent = config_path_.parent_path();
-                if (!parent.empty())
-                {
-                    fs::create_directories(parent);
-                }
-                AtomicWriteFile(config_path_, "upload_target=notion\n"
-                                             "obsidian_vault_dir=\n"
-                                             "obsidian_folder=Clipboard\n"
-                                             "notion_token=\n"
-                                             "data_source_id=\n"
-                                             "database_id=\n"
-                                             "hotkey=Ctrl+Shift+B\n"
-                                             "enable_hotkey=true\n"
-                                             "tray_notifications=true\n"
-                                             "start_with_windows=false\n");
-            }
-            catch (const std::exception &ex)
-            {
-                if (logger_ != nullptr)
-                {
-                    logger_->Warn("创建配置文件失败: " + std::string(ex.what()));
-                }
-            }
-        }
-        OpenPath(config_path_);
-    }
-
     void OpenConfigPage()
     {
         try
@@ -1698,94 +1577,6 @@ private:
             ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Obsidian 笔记，请查看保存记录。");
             OpenRecentUploadResults();
         }
-    }
-
-    void OpenConfigDiagnostics()
-    {
-        const fs::path path = ConfigDiagnosticsPath(*config_);
-        if (!fs::exists(path))
-        {
-            try
-            {
-                AtomicWriteFile(path, "# Configuration Diagnostics\n\n还没有配置诊断结果。请先从托盘菜单选择“验证当前配置”。\n");
-            }
-            catch (const std::exception &ex)
-            {
-                if (logger_ != nullptr)
-                {
-                    logger_->Warn("创建配置诊断文件失败: " + std::string(ex.what()));
-                }
-            }
-        }
-        OpenPath(path);
-    }
-
-    void StartConfigDiagnostics()
-    {
-        if (diagnostics_running_.load())
-        {
-            ShowNotification(L"Notion Clipboard Win", L"配置验证正在进行。");
-            return;
-        }
-        if (diagnostics_thread_.joinable())
-        {
-            diagnostics_thread_.join();
-        }
-
-        diagnostics_running_.store(true);
-        const AppConfig config = *config_;
-        const fs::path diagnostics_path = ConfigDiagnosticsPath(config);
-        if (logger_ != nullptr)
-        {
-            logger_->Info("开始验证当前配置");
-        }
-        ShowNotification(L"Notion Clipboard Win", L"正在验证当前配置...");
-
-        diagnostics_thread_ = std::thread([this, config, diagnostics_path]
-                                          {
-                                              bool ok = false;
-                                              std::string error;
-                                              try
-                                              {
-                                                  ok = WriteConfigDiagnosticsReport(diagnostics_path, config, logger_);
-                                              }
-                                              catch (const std::exception &ex)
-                                              {
-                                                  error = ex.what();
-                                                  try
-                                                  {
-                                                      std::ostringstream report;
-                                                      report << "# Configuration Diagnostics\n\n"
-                                                             << "- Generated: " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
-                                                             << "- Status: FAILED\n"
-                                                             << "- Error: " << ReportLineValue(error) << "\n";
-                                                      AtomicWriteFile(diagnostics_path, report.str());
-                                                  }
-                                                  catch (...)
-                                                  {
-                                                  }
-                                              }
-                                              diagnostics_running_.store(false);
-
-                                              if (logger_ != nullptr)
-                                              {
-                                                  logger_->Info(std::string("配置验证完成: ") + (ok ? "OK" : "FAILED"));
-                                              }
-
-                                              auto notice = std::make_unique<UploadResultNotice>();
-                                              notice->title = L"Notion Clipboard Win";
-                                              notice->message = ok ? L"配置验证通过。报告已更新。" : L"配置验证发现问题。请查看配置诊断。";
-                                              if (!error.empty())
-                                              {
-                                                  notice->message += L"\n" + TruncateWide(Utf8ToWide(error), 120);
-                                              }
-                                              if (!cleaned_up_.load() && hwnd_ != nullptr &&
-                                                  PostMessageW(hwnd_, kUploadResultMessage, 0,
-                                                               reinterpret_cast<LPARAM>(notice.get())))
-                                              {
-                                                  notice.release();
-                                              }
-                                          });
     }
 
     bool MaybeOpenConfigPageOnStart()
@@ -1926,10 +1717,6 @@ private:
         {
             worker_->SetResultCallback({});
         }
-        if (diagnostics_thread_.joinable())
-        {
-            diagnostics_thread_.join();
-        }
 
         if (hwnd_ != nullptr)
         {
@@ -1980,8 +1767,6 @@ private:
     bool auto_start_configured_ = false;
     bool tray_icon_added_ = false;
     std::atomic<bool> cleaned_up_{false};
-    std::atomic<bool> diagnostics_running_{false};
-    std::thread diagnostics_thread_;
     bool recording_hotkey_ = false;
     bool restore_hotkey_enabled_after_recording_ = false;
     HHOOK keyboard_hook_ = nullptr;
@@ -2345,7 +2130,7 @@ AppConfig LoadConfigFromProtocolUrlOrContent(const std::string &url, const std::
     }
 
     std::filesystem::path candidate_path = config_path;
-    candidate_path += L".validate-url.";
+    candidate_path += L".protocol-url.";
     candidate_path += std::to_wstring(GetCurrentProcessId());
     candidate_path += L".ini";
     AtomicWriteFile(candidate_path, *content_value);
@@ -2354,39 +2139,6 @@ AppConfig LoadConfigFromProtocolUrlOrContent(const std::string &url, const std::
         *temp_path = candidate_path;
     }
     return LoadConfig(candidate_path);
-}
-
-int ValidateConfigUrlAndOpenReport(const std::string &url)
-{
-    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "配置验证");
-    std::filesystem::path temp_path;
-    std::error_code ignored;
-
-    try
-    {
-        const AppConfig config = LoadConfigFromProtocolUrlOrContent(url, config_path, &temp_path);
-        std::filesystem::create_directories(config.state_dir);
-        Logger logger(config.state_dir / L"notion-clipboard-win.log", false);
-        const std::filesystem::path diagnostics_path = ConfigDiagnosticsPath(config);
-        WriteConfigDiagnosticsReport(diagnostics_path, config, &logger);
-        std::filesystem::remove(temp_path, ignored);
-        OpenPathWithShell(diagnostics_path, "打开配置诊断");
-    }
-    catch (const std::exception &ex)
-    {
-        AppConfig fallback_config = LoadConfig(config_path);
-        std::filesystem::create_directories(fallback_config.state_dir);
-        const std::filesystem::path diagnostics_path = ConfigDiagnosticsPath(fallback_config);
-        std::ostringstream report;
-        report << "# Configuration Diagnostics\n\n"
-               << "- Generated: " << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
-               << "- Status: FAILED\n"
-               << "- Error: " << ReportLineValue(ex.what()) << "\n";
-        AtomicWriteFile(diagnostics_path, report.str());
-        std::filesystem::remove(temp_path, ignored);
-        OpenPathWithShell(diagnostics_path, "打开配置诊断");
-    }
-    return 0;
 }
 
 int TestUploadUrlAndOpenReport(const std::string &url)
@@ -2422,17 +2174,6 @@ int TestUploadUrlAndOpenReport(const std::string &url)
         std::filesystem::remove(temp_path, ignored);
         OpenPathWithShell(WriteUploadCenterPage(fallback_config, config_path), "打开保存记录");
     }
-    return 0;
-}
-
-int OpenConfigDiagnosticsUrl(const std::string &url)
-{
-    const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "配置诊断");
-    const AppConfig config = LoadConfig(config_path);
-    const std::filesystem::path diagnostics_path = ConfigDiagnosticsPath(config);
-    WriteFileIfMissing(diagnostics_path,
-                       "# Configuration Diagnostics\n\n还没有配置诊断结果。请先点击“验证当前配置”。\n");
-    OpenPathWithShell(diagnostics_path, "打开配置诊断");
     return 0;
 }
 
@@ -2730,7 +2471,7 @@ int RunMainSelfTest()
         fs::create_directories(protocol_vault);
         std::filesystem::path protocol_temp_path;
         const std::string protocol_url =
-            "notion-clipboard-win:/validate-config/?path=" + WideToUtf8(protocol_config_path.wstring()) +
+            "notion-clipboard-win:/test-upload/?path=" + WideToUtf8(protocol_config_path.wstring()) +
             "&content=upload_target%3Dobsidian%0Aobsidian_vault_dir%3D" + WideToUtf8(protocol_vault.wstring()) +
             "%0Aobsidian_folder%3DInbox%0A";
         const AppConfig protocol_config =
@@ -2738,7 +2479,7 @@ int RunMainSelfTest()
         if (protocol_config.upload_target != "obsidian" || protocol_config.obsidian_vault_dir != protocol_vault ||
             protocol_config.obsidian_folder != "Inbox" || protocol_temp_path.empty() || !fs::exists(protocol_temp_path))
         {
-            fail("validate-config protocol content was not loaded from temporary ini");
+            fail("protocol content was not loaded from temporary ini");
         }
         fs::remove(protocol_temp_path, ignored);
 
@@ -2791,26 +2532,6 @@ int RunMainSelfTest()
         {
             fail("configuration test upload did not write obsidian result");
         }
-
-        AppConfig diagnostic_config;
-        diagnostic_config.upload_target = "obsidian,notion";
-        diagnostic_config.state_dir = root / L"diag-state";
-        diagnostic_config.obsidian_vault_dir = root / L"diag-vault";
-        diagnostic_config.obsidian_folder = "Inbox";
-        fs::create_directories(diagnostic_config.obsidian_vault_dir);
-        const fs::path diagnostics_path = root / L"config-diagnostics.md";
-        const bool diagnostics_ok = WriteConfigDiagnosticsReport(diagnostics_path, diagnostic_config, nullptr);
-        const std::string diagnostics = ReadWholeFile(diagnostics_path);
-        if (diagnostics_ok || diagnostics.find("# Configuration Diagnostics") != 0 ||
-            diagnostics.find("## obsidian") == std::string::npos ||
-            diagnostics.find("- Status: OK") == std::string::npos ||
-            diagnostics.find("## notion") == std::string::npos ||
-            diagnostics.find("- Status: FAILED") == std::string::npos ||
-            diagnostics.find("缺少 Notion token") == std::string::npos ||
-            diagnostics.find("- Token: missing") == std::string::npos)
-        {
-            fail("configuration diagnostics report content mismatch");
-        }
     }
     catch (const std::exception &ex)
     {
@@ -2845,17 +2566,9 @@ int AppMain(int argc, wchar_t **argv)
     {
         return OpenConfigPageUrl(cli.open_config_page_url);
     }
-    if (!cli.validate_config_url.empty())
-    {
-        return ValidateConfigUrlAndOpenReport(cli.validate_config_url);
-    }
     if (!cli.test_upload_url.empty())
     {
         return TestUploadUrlAndOpenReport(cli.test_upload_url);
-    }
-    if (!cli.open_config_diagnostics_url.empty())
-    {
-        return OpenConfigDiagnosticsUrl(cli.open_config_diagnostics_url);
     }
     if (!cli.open_upload_center_url.empty())
     {

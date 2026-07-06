@@ -238,19 +238,9 @@ bool IsOpenConfigPageProtocolUrl(const std::wstring &arg)
     return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"open-config-page") != std::wstring::npos;
 }
 
-bool IsValidateConfigProtocolUrl(const std::wstring &arg)
-{
-    return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"validate-config") != std::wstring::npos;
-}
-
 bool IsTestUploadProtocolUrl(const std::wstring &arg)
 {
     return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"test-upload") != std::wstring::npos;
-}
-
-bool IsOpenConfigDiagnosticsProtocolUrl(const std::wstring &arg)
-{
-    return arg.rfind(L"notion-clipboard-win:", 0) == 0 && arg.find(L"open-config-diagnostics") != std::wstring::npos;
 }
 
 bool IsOpenUploadCenterProtocolUrl(const std::wstring &arg)
@@ -442,14 +432,6 @@ CliOptions ParseCli(int argc, wchar_t **argv)
             }
             options.open_config_page_url = WideToUtf8(argv[++i]);
         }
-        else if (arg == L"--validate-config-url")
-        {
-            if (i + 1 >= argc)
-            {
-                throw std::runtime_error("--validate-config-url 缺少 URL");
-            }
-            options.validate_config_url = WideToUtf8(argv[++i]);
-        }
         else if (arg == L"--test-upload-url")
         {
             if (i + 1 >= argc)
@@ -457,14 +439,6 @@ CliOptions ParseCli(int argc, wchar_t **argv)
                 throw std::runtime_error("--test-upload-url 缺少 URL");
             }
             options.test_upload_url = WideToUtf8(argv[++i]);
-        }
-        else if (arg == L"--open-config-diagnostics-url")
-        {
-            if (i + 1 >= argc)
-            {
-                throw std::runtime_error("--open-config-diagnostics-url 缺少 URL");
-            }
-            options.open_config_diagnostics_url = WideToUtf8(argv[++i]);
         }
         else if (arg == L"--open-upload-center-url")
         {
@@ -506,17 +480,9 @@ CliOptions ParseCli(int argc, wchar_t **argv)
         {
             options.open_config_page_url = WideToUtf8(arg);
         }
-        else if (IsValidateConfigProtocolUrl(arg))
-        {
-            options.validate_config_url = WideToUtf8(arg);
-        }
         else if (IsTestUploadProtocolUrl(arg))
         {
             options.test_upload_url = WideToUtf8(arg);
-        }
-        else if (IsOpenConfigDiagnosticsProtocolUrl(arg))
-        {
-            options.open_config_diagnostics_url = WideToUtf8(arg);
         }
         else if (IsOpenUploadCenterProtocolUrl(arg))
         {

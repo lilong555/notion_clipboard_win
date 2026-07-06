@@ -55,9 +55,7 @@ struct CliOptions
     std::filesystem::path dry_run_obsidian_output_path;
     std::string apply_config_url;
     std::string open_config_page_url;
-    std::string validate_config_url;
     std::string test_upload_url;
-    std::string open_config_diagnostics_url;
     std::string open_upload_center_url;
     std::string retry_failed_job_url;
     std::string retry_failed_uploads_url;

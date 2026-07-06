@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Remove obsolete configuration diagnostics protocol handlers and dead tray command paths after the UI cleanup.
+
 ## 0.2.3 - 2026-07-06
 
 - Add a local save records page with recent results, waiting/final-failed queue visibility, refresh, and retry actions for failed items.
