@@ -1151,6 +1151,11 @@ private:
             }
         }
 
+        if (!notifications_enabled_)
+        {
+            return;
+        }
+
         auto notice = std::make_unique<UploadResultNotice>();
         notice->title = L"Notion Clipboard Win";
         const std::wstring target = UploadTargetDisplayName(job.target);

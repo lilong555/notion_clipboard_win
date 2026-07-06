@@ -13,6 +13,7 @@
 - Let the configuration page rescan Obsidian folders using the current unsaved page values.
 - Add a backend regression test for Obsidian rescans from unsaved configuration-page values.
 - Document how Obsidian rescans work for newly created vaults and folders.
+- Skip save-result notification message work when tray notifications are disabled.
 - Make self-test temporary directories unique across parallel test processes.
 
 ## 0.2.5 - 2026-07-06
