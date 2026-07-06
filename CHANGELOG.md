@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Show an explicit Obsidian vault chooser placeholder when no vault has been configured yet.
+
 ## 0.2.6 - 2026-07-06
 
 - Add a Windows CI workflow for console builds, app self-tests, and installer guard checks.

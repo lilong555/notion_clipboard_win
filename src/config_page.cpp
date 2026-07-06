@@ -108,19 +108,26 @@ void AddSelectWithCustomInput(std::ostringstream *html, const std::string &key, 
                               const std::string &value,
                               const std::vector<std::pair<std::string, std::string>> &options,
                               const std::string &custom_label, const std::string &custom_placeholder,
-                              const std::string &note = "")
+                              const std::string &note = "", const std::string &empty_placeholder_label = "")
 {
     const bool known_value = HasOptionValue(options, value);
+    const bool show_empty_placeholder = value.empty() && !empty_placeholder_label.empty();
     *html << "<label><span>" << HtmlEscape(label) << "</span><select data-choice-target=\"" << HtmlEscape(key)
           << "\">";
+    if (show_empty_placeholder)
+    {
+        *html << "<option value=\"\" selected>" << HtmlEscape(empty_placeholder_label) << "</option>";
+    }
     for (const auto &option : options)
     {
         *html << "<option value=\"" << HtmlEscape(option.first) << "\""
-              << (known_value && option.first == value ? " selected" : "") << ">" << HtmlEscape(option.second)
+              << (!show_empty_placeholder && known_value && option.first == value ? " selected" : "") << ">"
+              << HtmlEscape(option.second)
               << "</option>";
     }
-    *html << "<option value=\"" << kCustomPickerValue << "\"" << (known_value ? "" : " selected") << ">"
-          << HtmlEscape(custom_label) << "</option></select>";
+    *html << "<option value=\"" << kCustomPickerValue << "\""
+          << (show_empty_placeholder || known_value ? "" : " selected") << ">" << HtmlEscape(custom_label)
+          << "</option></select>";
     *html << "<input data-key=\"" << HtmlEscape(key) << "\" type=\"hidden\" value=\"" << HtmlEscape(value) << "\">";
     *html << "<input data-custom-key=\"" << HtmlEscape(key) << "\" type=\"text\" value=\""
           << HtmlEscape(known_value ? "" : value) << "\" placeholder=\"" << HtmlEscape(custom_placeholder) << "\""
@@ -455,7 +462,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
     AddSelectWithCustomInput(&html, "obsidian_vault_dir", "Obsidian 仓库", PathValue(config.obsidian_vault_dir),
                              BuildObsidianVaultOptions(config.obsidian_vault_dir, obsidian_vaults),
                              "手动填写路径...", "E:\\obsidian\\第一个库",
-                             "选择已注册仓库；没有列出时可手动填写路径。");
+                             "选择已注册仓库；没有列出时可手动填写路径。", "请选择 Obsidian 仓库...");
     AddSelectWithCustomInput(&html, "obsidian_folder", "Obsidian 子目录", config.obsidian_folder,
                              AddRootFolderOption(current_obsidian_folder_options),
                              "新建/手动输入...", "Inbox/Clipboard", "选择已有目录；手动输入的新目录会自动创建。");
@@ -610,6 +617,20 @@ int RunConfigPageSelfTest()
             has_folder(folder_groups[1], "aaa"))
         {
             fail("obsidian folder options were not scoped by vault");
+        }
+
+        AppConfig empty_vault_config = config;
+        empty_vault_config.state_dir = root / L"empty-vault-state";
+        empty_vault_config.obsidian_vault_dir.clear();
+        const std::filesystem::path empty_vault_page =
+            WriteConfigPage(empty_vault_config, root / L"empty-vault.ini");
+        const std::string empty_vault_html = ReadWholeFile(empty_vault_page);
+        if (empty_vault_html.find("<option value=\"\" selected>请选择 Obsidian 仓库...</option>") ==
+                std::string::npos ||
+            empty_vault_html.find("<option value=\"__custom__\" selected>手动填写路径...</option>") !=
+                std::string::npos)
+        {
+            fail("empty obsidian vault should show an explicit chooser placeholder");
         }
 
         const std::filesystem::path page = WriteConfigPage(config, root / L"notion_clipboard_win.ini");
