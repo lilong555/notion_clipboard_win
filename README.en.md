@@ -81,6 +81,8 @@ To save to Obsidian, choose a vault:
 4. Missing folders are created automatically when writing.
 5. `Obsidian Tags` is optional. You can enter tags like `algorithm cpp study`.
 
+If you just created a vault or folder and it is not listed yet, click "重新扫描 Obsidian" on the configuration page. It rescans using the current unsaved vault path on the page and does not write the ini configuration.
+
 Obsidian files use the detected content title as the filename when possible. If a file with the same name already exists, the app adds a numeric suffix instead of overwriting it.
 
 ### 6. Test Save And Apply
@@ -142,6 +144,8 @@ This is expected. Except for the one post-install launch, open the configuration
 ### Obsidian Folder Is Missing
 
 Check that `Obsidian Vault` points to the correct vault. `Obsidian Folder` is a folder inside the vault, such as `Clipboard`, not a full disk path.
+
+If you just created the folder on disk, return to the configuration page and click "重新扫描 Obsidian". Rescan only refreshes the list; click "Apply and restart" afterward when the settings are correct.
 
 ### Notion Save Fails
 
