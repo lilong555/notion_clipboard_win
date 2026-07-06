@@ -1383,15 +1383,10 @@ private:
                     kMenuToggleClipboardListener, L"自动监听剪贴板");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING, kMenuOpenConfigPage, L"打开配置页面");
-        AppendMenuW(menu, MF_STRING | (diagnostics_running_.load() ? MF_GRAYED : MF_ENABLED), kMenuValidateConfig,
-                    L"验证当前配置");
-        AppendMenuW(menu, MF_STRING, kMenuOpenConfigDiagnostics, L"查看配置诊断");
-        AppendMenuW(menu, MF_STRING, kMenuOpenConfig, L"打开配置文件");
         AppendMenuW(menu, MF_STRING, kMenuOpenRecentUploads, L"打开上传中心");
         AppendMenuW(menu, MF_STRING | (fs::exists(LastObsidianUploadPath(*config_)) ? MF_ENABLED : MF_GRAYED),
                     kMenuOpenLastObsidian, L"打开最近 Obsidian 笔记");
         AppendMenuW(menu, MF_STRING, kMenuOpenLog, L"查看日志");
-        AppendMenuW(menu, MF_STRING, kMenuOpenStateDir, L"打开状态目录");
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING, kMenuExit, L"退出");
 
