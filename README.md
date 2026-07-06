@@ -54,7 +54,7 @@ upload_target=notion,obsidian
 
 ### 4. 配置 Notion
 
-如果你要上传到 Notion，需要准备两个信息：
+如果你要保存到 Notion，需要准备两个信息：
 
 - `Notion Token`
 - `Notion 数据源 ID`
@@ -71,7 +71,7 @@ upload_target=notion,obsidian
 
 ### 5. 配置 Obsidian
 
-如果你要上传到 Obsidian，需要选择一个仓库：
+如果你要保存到 Obsidian，需要选择一个仓库：
 
 1. 在配置页面找到 `Obsidian 仓库`。
 2. 选择已经识别出来的仓库，或手动填写仓库文件夹路径。
@@ -164,7 +164,7 @@ Notion 的代码高亮依赖代码块语言。程序会尽量识别 `cpp`、`sql
 
 如果你不使用配置页面，也可以编辑 `notion_clipboard_win.ini`。普通用户仍建议优先使用配置页面，因为热键录制、Obsidian 仓库选择和测试上传都在页面里更直观。
 
-只上传到 Notion：
+只保存到 Notion：
 
 ```ini
 upload_target=notion
@@ -172,7 +172,7 @@ notion_token=secret_xxx
 data_source_id=xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 ```
 
-同时上传到 Notion 和 Obsidian：
+同时保存到 Notion 和 Obsidian：
 
 ```ini
 upload_target=notion,obsidian

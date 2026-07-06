@@ -437,7 +437,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
 <main class="wrap"><div>
 )";
 
-    AddSectionStart(&html, "Notion", "上传为 Notion 数据源里的页面。");
+    AddSectionStart(&html, "Notion", "保存为 Notion 数据源里的页面。");
     AddInput(&html, "notion_token", "Notion Token", config.notion_token, "secret_xxx", "password");
     AddInput(&html, "data_source_id", "Notion 数据源 ID", config.data_source_id);
     html << "<details class=\"advanced\"><summary>高级：Notion 属性</summary><p>标题属性通常会自动识别；旧 Database ID 和内容预览属性仅在特殊数据库结构中需要。</p>\n";
@@ -514,7 +514,7 @@ function val(key){const el=document.querySelector(`[data-key="${key}"]`); if(!el
 function selectedTargets(){return targetChecks.filter(el=>el.checked).map(targetValue);}
 function isHotkeyTextValid(text){const tokens=(text||"").split("+").map(part=>part.trim()).filter(Boolean); if(tokens.length<2)return false; let modifiers=0; let keys=0; const keyNames=new Set(["backspace","delete","del","down","end","enter","esc","escape","home","insert","ins","left","pagedown","pageup","pgdn","pgup","pause","printscreen","prtsc","right","space","tab","up"]); for(const raw of tokens){const token=raw.toLowerCase(); if(token==="ctrl"||token==="control"||token==="alt"||token==="shift"||token==="win"||token==="windows"||token==="super"||token==="meta"){modifiers++; continue;} if(/^[a-z0-9]$/.test(token)||/^f([1-9]|1[0-9]|2[0-4])$/.test(token)||keyNames.has(token)){keys++; continue;} return false;} return modifiers>0&&keys===1;}
 function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个保存位置"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要数据源 ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian 仓库不能为空"); return problems;}
-function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后将上传到："+selected.join("、")); applyButton.disabled=problems.length>0;}
+function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后会写入："+selected.join("、")); applyButton.disabled=problems.length>0;}
 function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; iniBox.value=text; if(downloadUrl)URL.revokeObjectURL(downloadUrl); downloadUrl=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); downloadLink.href=downloadUrl; updateStatus(); updateObsidianLocation();}
 function protocolUrl(action){return "notion-clipboard-win:/"+action+"/?path="+encodeURIComponent(configPath);}
 function protocolUrlWithOutput(action){return protocolUrl(action)+"&content="+encodeURIComponent(iniBox.value);}
@@ -648,7 +648,7 @@ int RunConfigPageSelfTest()
                                          "id=\"openUploadCenter\"", "上传中心",
                                          "protocolUrl(\"open-upload-center\")",
                                        "id=\"status\"", "validateConfig()", "applyButton.disabled",
-                                       "配置完整。保存后将上传到：", "需要处理：",
+                                       "配置完整。保存后会写入：", "需要处理：",
                                        "id=\"hotkeyInput\"", "readonly aria-readonly=\"true\"", "id=\"recordHotkey\"",
                                        "录制热键", "热键只能通过录制修改",
                                        "高级：性能和重试", "这些参数用于限流、队列和本地状态保存。",
@@ -676,6 +676,7 @@ int RunConfigPageSelfTest()
                                         "upload_initial_clipboard", "启动后上传当前剪贴板",
                                         "id=\"validateOutputConfig\"", "查看配置诊断", "id=\"openConfigDiagnostics\"",
                                         "输出 ini", "页面会输出包含 token 的完整配置", "上传后端",
+                                        "配置完整。保存后将上传到：",
                                         "Obsidian Vault", "Vault 根目录", "未匹配到已注册 vault",
                                         "尚未选择 vault"})
             {
