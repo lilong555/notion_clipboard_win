@@ -440,12 +440,14 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
     AddSectionStart(&html, "Notion", "上传为 Notion 数据源里的页面。");
     AddInput(&html, "notion_token", "Notion Token", config.notion_token, "secret_xxx", "password");
     AddInput(&html, "data_source_id", "Data Source ID", config.data_source_id);
+    html << "<details class=\"advanced\"><summary>高级：Notion 属性</summary><p>标题属性通常会自动识别；旧 Database ID 和内容预览属性仅在特殊数据库结构中需要。</p>\n";
     AddInput(&html, "database_id", "Database ID", config.database_id, "仅保留旧配置兼容。");
     AddInput(&html, "title_property_name", "标题属性", config.title_property_name);
     AddInput(&html, "content_property_name", "内容预览属性", config.content_property_name);
     AddInput(&html, "created_time_property_name", "创建时间属性", config.created_time_property_name);
     AddInput(&html, "content_property_max_chars", "内容预览最大字符", std::to_string(config.content_property_max_chars),
              "", "number");
+    html << "</details>\n";
     AddSectionEnd(&html);
 
     AddSectionStart(&html, "Obsidian", "写入指定 vault 的 Markdown 笔记。");
@@ -621,6 +623,10 @@ int RunConfigPageSelfTest()
             for (const char *needle : {"notion_secret", "value=\"obsidian\" data-target-option=\"obsidian\"",
                                        "value=\"notion\" data-target-option=\"notion\"", "未来支持", "Webhook、语雀和飞书文档",
                                        "notion,obsidian",
+                                       "高级：Notion 属性", "标题属性通常会自动识别",
+                                       "data-key=\"database_id\"", "data-key=\"title_property_name\"",
+                                       "data-key=\"content_property_name\"", "data-key=\"created_time_property_name\"",
+                                       "data-key=\"content_property_max_chars\"",
                                        "data-choice-target=\"obsidian_vault_dir\"",
                                        "data-choice-target=\"obsidian_folder\"", "data-custom-key=\"obsidian_vault_dir\"",
                                        "data-custom-key=\"obsidian_folder\"", "新建/手动输入...", "value=\"aaa\"",
