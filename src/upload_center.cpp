@@ -363,7 +363,7 @@ std::string PreferredCopyValue(const RecentRecord &record)
     {
         return record.notion_page_id;
     }
-    return record.job_id;
+    return "";
 }
 
 std::uint64_t JsonNumberAsU64(const JsonValue *value, std::uint64_t fallback)
@@ -674,30 +674,31 @@ void AppendQueueTable(std::ostringstream *html, const std::vector<QueueRecord> &
     }
 
     *html << "<div class=\"table-wrap\"><table><thead><tr><th>状态</th><th>下次重试</th><th>目标</th>"
-             "<th>标题</th><th>次数</th><th>错误</th><th>操作</th></tr></thead><tbody>";
+             "<th>标题</th><th>已重试</th><th>错误</th><th>操作</th></tr></thead><tbody>";
     for (const QueueRecord &record : records)
     {
         const std::string location = QueueLocation(record.job);
-        const std::string file_uri = BuildFileUriFromUtf8Path(WideToUtf8(record.path.wstring()));
         const std::string error = record.load_error.empty() ? record.job.last_error : record.load_error;
         *html << "<tr><td><span class=\"pill queue\">" << HtmlEscape(record.state) << "</span></td><td>"
               << HtmlEscape(DisplayTime(record.job.not_before_ms)) << "</td><td>"
-              << HtmlEscape(DisplayTargetName(record.job.target)) << "</td><td>" << HtmlEscape(record.job.title)
-              << "<div class=\"muted\">" << HtmlEscape(record.job.id) << "</div>";
+              << HtmlEscape(DisplayTargetName(record.job.target)) << "</td><td>" << HtmlEscape(record.job.title);
         if (!location.empty())
         {
             *html << "<div class=\"muted\">" << HtmlEscape(location) << "</div>";
         }
         *html << "</td><td>" << record.job.attempts << "</td><td class=\"error\">" << HtmlEscape(error)
               << "</td><td class=\"actions\">";
-        AppendOpenLink(html, file_uri, "打开任务");
         if (record.state == "最终失败" && record.load_error.empty())
         {
             const std::string file_name = WideToUtf8(record.path.filename().wstring());
             AppendConfirmLink(html, ProtocolUrlWithParam("retry-failed-job", config_path, "file", file_name),
                               "重试此项", "将这个任务移回等待队列并立即重试。继续吗？");
         }
-        AppendCopyButton(html, record.job.id, "复制 ID");
+        else
+        {
+            *html << "<span class=\"muted\">"
+                  << (record.load_error.empty() ? "等待自动重试" : "无法重试") << "</span>";
+        }
         *html << "</td></tr>";
     }
     *html << "</tbody></table></div></section>";
@@ -905,7 +906,8 @@ int RunUploadCenterSelfTest()
                                     "页面是打开时生成的本地快照", "data-copy=", "本地保存记录和重试队列",
                                     "open-upload-center", "刷新状态", "retry-failed-uploads", "重试失败任务",
                                     "retry-failed-job", "重试此项", "成功", "失败", ">Notion</td>",
-                                    ">Obsidian</td>", "将失败任务移回等待队列并立即重试。继续吗？"})
+                                    ">Obsidian</td>", "已重试", "等待自动重试",
+                                    "将失败任务移回等待队列并立即重试。继续吗？"})
         {
             if (html.find(needle) == std::string::npos)
             {
@@ -914,7 +916,7 @@ int RunUploadCenterSelfTest()
         }
         for (const char *needle : {"打开状态目录", "原始报告", "上传中心", "最近上传", "还没有上传记录",
                                    "SUCCESS</span>", "FAILED</span>", ">notion</td>", ">obsidian</td>",
-                                   "failed 目录"})
+                                   "failed 目录", "打开任务", "复制 ID", "queued-job", "failed-two-job"})
         {
             if (html.find(needle) != std::string::npos)
             {
