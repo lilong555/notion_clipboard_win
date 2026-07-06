@@ -73,5 +73,6 @@ std::vector<std::string> ParseUploadTargets(const std::string &value);
 AppConfig LoadConfig(const std::filesystem::path &path);
 CliOptions ParseCli(int argc, wchar_t **argv);
 void PrintHelp();
+int RunConfigSelfTest();
 void ValidateConfigOrThrow(const AppConfig &config);
 }

@@ -508,24 +508,93 @@ CliOptions ParseCli(int argc, wchar_t **argv)
     return options;
 }
 
+std::string BuildHelpText()
+{
+    std::ostringstream help;
+    help << "Notion Clipboard Win\n\n"
+         << "用法:\n"
+         << "  notion_clipboard_win.exe [--config path]              启动后台托盘进程\n"
+         << "  notion_clipboard_win.exe --once [--config path]       只保存当前剪贴板一次\n"
+         << "  notion_clipboard_win.exe --dry-run --once             读取剪贴板但不保存\n\n"
+         << "  notion_clipboard_win.exe --self-test                  运行本地转换回归测试\n\n"
+         << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不保存\n\n"
+         << "  notion_clipboard_win.exe --dry-run-obsidian-file in out 调试生成 Obsidian Markdown 文件\n\n"
+         << "  notion_clipboard_win.exe --open-config-page-on-start  启动后打开配置页一次\n\n"
+         << "默认热键:\n"
+         << "  Ctrl+Shift+B\n\n"
+         << "保存目标:\n"
+         << "  upload_target=notion 或 upload_target=notion,obsidian\n"
+         << "  支持: " << SupportedUploadTargetsText() << "\n\n"
+         << "配置默认路径:\n"
+         << "  " << WideToUtf8(DefaultConfigPath().wstring()) << "\n";
+    return help.str();
+}
+
 void PrintHelp()
 {
-    std::cout << "Notion Clipboard Win\n\n"
-              << "用法:\n"
-              << "  notion_clipboard_win.exe [--config path]              启动后台托盘进程\n"
-              << "  notion_clipboard_win.exe --once [--config path]       只保存当前剪贴板一次\n"
-              << "  notion_clipboard_win.exe --dry-run --once             读取剪贴板但不保存\n\n"
-              << "  notion_clipboard_win.exe --self-test                  运行本地转换回归测试\n\n"
-              << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不保存\n\n"
-              << "  notion_clipboard_win.exe --dry-run-obsidian-file in out 调试生成 Obsidian Markdown 文件\n\n"
-              << "  notion_clipboard_win.exe --open-config-page-on-start  启动后打开配置页一次\n\n"
-              << "默认热键:\n"
-              << "  Ctrl+Shift+B\n\n"
-              << "保存目标:\n"
-              << "  upload_target=notion 或 upload_target=notion,obsidian\n"
-              << "  支持: " << SupportedUploadTargetsText() << "\n\n"
-              << "配置默认路径:\n"
-              << "  " << WideToUtf8(DefaultConfigPath().wstring()) << "\n";
+    std::cout << BuildHelpText();
+}
+
+int RunConfigSelfTest()
+{
+    bool ok = true;
+    auto fail = [&](const std::string &message)
+    {
+        std::cout << "[FAIL] config self-test: " << message << "\n";
+        ok = false;
+    };
+
+    try
+    {
+        const std::string help = BuildHelpText();
+        for (const char *needle : {"Notion Clipboard Win", "--once", "--dry-run-file",
+                                   "--dry-run-obsidian-file", "--open-config-page-on-start",
+                                   "upload_target=notion 或 upload_target=notion,obsidian",
+                                   "支持: notion、obsidian"})
+        {
+            if (help.find(needle) == std::string::npos)
+            {
+                fail(std::string("help is missing expected content: ") + needle);
+            }
+        }
+        for (const char *needle : {"--validate-config", "--test-upload-url", "--open-upload-center-url",
+                                   "--retry-failed-job-url", "--retry-failed-uploads-url", "webhook", "yuque",
+                                   "feishu", "语雀", "飞书", "上传"})
+        {
+            if (help.find(needle) != std::string::npos)
+            {
+                fail(std::string("help exposes internal or future-only content: ") + needle);
+            }
+        }
+
+        wchar_t exe[] = L"notion_clipboard_win.exe";
+        wchar_t validate_flag[] = L"--validate-config";
+        wchar_t *validate_argv[] = {exe, validate_flag};
+        const CliOptions validate_options = ParseCli(2, validate_argv);
+        if (!validate_options.validate_config)
+        {
+            fail("hidden --validate-config compatibility flag was not parsed");
+        }
+
+        wchar_t test_upload_flag[] = L"--test-upload-url";
+        wchar_t test_upload_url[] = L"notion-clipboard-win:/test-upload/?path=C%3A%5CTemp%5Cnotion_clipboard_win.ini";
+        wchar_t *test_upload_argv[] = {exe, test_upload_flag, test_upload_url};
+        const CliOptions test_upload_options = ParseCli(3, test_upload_argv);
+        if (test_upload_options.test_upload_url.empty())
+        {
+            fail("hidden --test-upload-url compatibility flag was not parsed");
+        }
+    }
+    catch (const std::exception &ex)
+    {
+        fail(ex.what());
+    }
+
+    if (ok)
+    {
+        std::cout << "[PASS] config help surface\n";
+    }
+    return ok ? 0 : 1;
 }
 
 namespace

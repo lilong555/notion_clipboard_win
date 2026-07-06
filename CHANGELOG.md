@@ -6,6 +6,7 @@
 - Keep the configuration page focused on Notion and Obsidian by removing the visible future-platform notice.
 - Hide internal configuration-page protocol arguments from the command-line help.
 - Hide the legacy configuration validation command from the command-line help while keeping it available for compatibility.
+- Add a command-line help regression test to keep internal and future-only options out of the public help surface.
 
 ## 0.2.3 - 2026-07-06
 

@@ -73,6 +73,7 @@ using ncw::PersistentQueue;
 using ncw::ReadWholeFile;
 using ncw::RunDryRunText;
 using ncw::RunConfigPageSelfTest;
+using ncw::RunConfigSelfTest;
 using ncw::RunObsidianSelfTest;
 using ncw::RunSelfTest;
 using ncw::RunUploadCenterSelfTest;
@@ -2602,6 +2603,11 @@ int AppMain(int argc, wchar_t **argv)
         if (target_result != 0)
         {
             return target_result;
+        }
+        const int config_result = RunConfigSelfTest();
+        if (config_result != 0)
+        {
+            return config_result;
         }
         const int obsidian_result = RunObsidianSelfTest();
         if (obsidian_result != 0)
