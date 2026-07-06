@@ -12,6 +12,7 @@
 - Replace the configuration page's debug wording for exported ini with backup and migration wording.
 - Keep the example configuration focused on the current Notion and Obsidian targets.
 - Prefer local Markdown file links over `obsidian://` links in the save records page to avoid vault lookup errors.
+- Prefer existing local Markdown files when opening the latest Obsidian note from the tray.
 
 ## 0.2.4 - 2026-07-06
 

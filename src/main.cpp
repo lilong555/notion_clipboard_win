@@ -412,6 +412,24 @@ std::optional<std::string> ReadStateValue(const std::filesystem::path &path, con
     return std::nullopt;
 }
 
+std::optional<std::wstring> ChooseLastObsidianOpenTarget(const std::optional<std::string> &file,
+                                                         const std::optional<std::string> &uri)
+{
+    if (file.has_value() && !file->empty())
+    {
+        const fs::path file_path = fs::path(Utf8ToWide(*file));
+        if (fs::exists(file_path))
+        {
+            return file_path.wstring();
+        }
+    }
+    if (uri.has_value() && uri->rfind("obsidian://", 0) == 0)
+    {
+        return Utf8ToWide(*uri);
+    }
+    return std::nullopt;
+}
+
 HICON LoadApplicationIcon(HINSTANCE instance, int width, int height)
 {
     HICON icon = reinterpret_cast<HICON>(
@@ -1551,17 +1569,10 @@ private:
             const std::optional<std::string> uri = ReadStateValue(state_path, "uri");
             const std::optional<std::string> file = ReadStateValue(state_path, "file");
             bool opened = false;
-            if (uri.has_value() && uri->rfind("obsidian://", 0) == 0)
+            const std::optional<std::wstring> target = ChooseLastObsidianOpenTarget(file, uri);
+            if (target.has_value())
             {
-                opened = TryOpenShellTarget(Utf8ToWide(*uri));
-            }
-            if (!opened && file.has_value() && !file->empty())
-            {
-                const fs::path file_path = fs::path(Utf8ToWide(*file));
-                if (fs::exists(file_path))
-                {
-                    opened = TryOpenShellTarget(file_path.wstring());
-                }
+                opened = TryOpenShellTarget(*target);
             }
             if (!opened)
             {
@@ -2465,6 +2476,20 @@ int RunMainSelfTest()
             *last_title != callback_job.title || last_obsidian.find("notion-page-id") != std::string::npos)
         {
             fail("last obsidian upload state content mismatch");
+        }
+        const fs::path last_existing_file = root / L"existing-vault" / L"Inbox" / L"Worker Callback.md";
+        fs::create_directories(last_existing_file.parent_path());
+        AtomicWriteFile(last_existing_file, "body");
+        const std::optional<std::wstring> local_open_target = ChooseLastObsidianOpenTarget(
+            WideToUtf8(last_existing_file.wstring()), "obsidian://open?vault=Wrong&file=Inbox%2FWorker%20Callback.md");
+        const std::optional<std::wstring> uri_open_target = ChooseLastObsidianOpenTarget(
+            std::string("E:\\missing\\Worker Callback.md"),
+            "obsidian://open?vault=Test&file=Inbox%2FWorker%20Callback.md");
+        if (!local_open_target.has_value() || *local_open_target != last_existing_file.wstring() ||
+            !uri_open_target.has_value() ||
+            *uri_open_target != L"obsidian://open?vault=Test&file=Inbox%2FWorker%20Callback.md")
+        {
+            fail("last obsidian open target did not prefer existing local files");
         }
 
         const fs::path protocol_config_path = root / L"notion_clipboard_win.ini";
