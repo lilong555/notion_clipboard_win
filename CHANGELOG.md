@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Guard release installer builds when the current VERSION tag already exists on a different commit.
+- Add a `-CheckOnly` mode to the installer build script for fast release-guard verification.
 
 ## 0.2.4 - 2026-07-06
 
