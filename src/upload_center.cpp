@@ -772,6 +772,11 @@ std::filesystem::path WriteUploadCenterPage(const AppConfig &config, const std::
     const std::vector<RecentRecord> recent_records = ParseRecentRecords(recent_path);
     std::vector<QueueRecord> queue_records = LoadQueueRecords(config, L"queue", "等待重试");
     std::vector<QueueRecord> failed_records = LoadQueueRecords(config, L"failed", "最终失败");
+    const std::size_t retryable_failed_count =
+        std::count_if(failed_records.begin(), failed_records.end(), [](const QueueRecord &record)
+                      {
+                          return record.load_error.empty();
+                      });
     queue_records.insert(queue_records.end(), failed_records.begin(), failed_records.end());
 
     std::sort(queue_records.begin(), queue_records.end(), [](const QueueRecord &a, const QueueRecord &b)
@@ -807,7 +812,7 @@ std::filesystem::path WriteUploadCenterPage(const AppConfig &config, const std::
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 "Segoe UI",system-ui,sans-serif}
 header{border-bottom:1px solid var(--line);background:var(--panel)}.bar{max-width:1180px;margin:auto;padding:16px 20px;display:flex;justify-content:space-between;gap:16px;align-items:center}
 h1{font-size:20px;margin:0}.path{font-size:12px;color:var(--muted);word-break:break-all}.wrap{max-width:1180px;margin:0 auto;padding:20px}
-.toolbar,.metrics{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.metrics{margin-bottom:14px}.metric{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:10px 12px;min-width:120px}.metric strong{display:block;font-size:20px}.metric span{color:var(--muted);font-size:12px}
+.toolbar,.metrics{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.toolbar-note{color:var(--muted);font-size:12px}.metrics{margin-bottom:14px}.metric{border:1px solid var(--line);background:var(--panel);border-radius:8px;padding:10px 12px;min-width:120px}.metric strong{display:block;font-size:20px}.metric span{color:var(--muted);font-size:12px}
 section{background:var(--panel);border:1px solid var(--line);border-radius:8px;margin:0 0 16px;padding:14px}.section-head{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:10px}.section-head h2{font-size:15px;margin:0}.section-head span,.muted{color:var(--muted);font-size:12px}
 .button,button{border:0;border-radius:6px;background:var(--accent);color:#fff;padding:7px 10px;font-weight:600;text-decoration:none;cursor:pointer;display:inline-block}.actions{display:flex;gap:6px;flex-wrap:wrap}
 .table-wrap{overflow:auto}table{width:100%;border-collapse:collapse;min-width:860px}th,td{border-top:1px solid var(--line);padding:9px 8px;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);font-weight:700}td.location{max-width:340px;word-break:break-all}.pill{display:inline-block;border-radius:999px;padding:2px 8px;font-size:12px;font-weight:700;background:var(--line);color:var(--text)}.pill.ok{background:color-mix(in srgb,var(--ok) 14%,transparent);color:var(--ok)}.pill.bad{background:color-mix(in srgb,var(--bad) 14%,transparent);color:var(--bad)}.pill.queue{background:color-mix(in srgb,var(--queue) 14%,transparent);color:var(--queue)}
@@ -817,9 +822,17 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:8px;m
 </head>
 <body>
 <header><div class="bar"><div><h1>保存记录</h1><div class="path">本地保存记录和重试队列</div></div><div class="toolbar"><a class="button" href=")"
-         << HtmlEscape(refresh_url) << R"(">刷新状态</a><a class="button" href=")"
-         << HtmlEscape(retry_failed_url)
-         << R"HTML(" onclick="return confirm('将失败任务移回等待队列并立即重试。继续吗？')">重试失败任务</a></div></div></header>
+         << HtmlEscape(refresh_url) << R"(">刷新状态</a>)";
+    if (retryable_failed_count > 0)
+    {
+        html << R"(<a class="button" href=")" << HtmlEscape(retry_failed_url)
+             << R"HTML(" onclick="return confirm('将失败任务移回等待队列并立即重试。继续吗？')">重试失败任务</a>)HTML";
+    }
+    else
+    {
+        html << R"(<span class="toolbar-note">没有失败任务</span>)";
+    }
+    html << R"HTML(</div></div></header>
 <main class="wrap">
 <div class="metrics"><div class="metric"><strong>)HTML"
          << recent_records.size() << R"(</strong><span>最近记录</span></div><div class="metric"><strong>)"
@@ -941,6 +954,26 @@ int RunUploadCenterSelfTest()
                 fail(std::string("found debug-only upload center content: ") + needle);
             }
         }
+
+        AppConfig no_failed_config;
+        no_failed_config.state_dir = root / L"no-failed-state";
+        fs::create_directories(no_failed_config.state_dir);
+        AtomicWriteFile(no_failed_config.state_dir / L"recent-upload-results.md",
+                        "# Recent Upload Results\n\n"
+                        "## 2026-07-05T00:02:00Z - SUCCESS - notion\n\n"
+                        "- Title: Clean Title\n"
+                        "- Target: notion\n"
+                        "- Job: clean-job\n"
+                        "- Notion URL: <https://www.notion.so/clean>\n\n");
+        const std::string no_failed_html =
+            ReadWholeFile(WriteUploadCenterPage(no_failed_config, root / L"no-failed.ini"));
+        if (no_failed_html.find("没有失败任务") == std::string::npos ||
+            no_failed_html.find("retry-failed-uploads") != std::string::npos ||
+            no_failed_html.find("重试失败任务") != std::string::npos)
+        {
+            fail("upload center should hide bulk retry when there are no failed jobs");
+        }
+
         const std::size_t file_link_pos = html.find("href=\"file:///E:/vault/Inbox/Worker%20Callback.md\"");
         const std::size_t obsidian_uri_pos =
             html.find("href=\"obsidian://open?vault=Test&amp;file=Inbox%2FWorker%20Callback.md\"");

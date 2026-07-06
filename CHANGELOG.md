@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Show an explicit Obsidian vault chooser placeholder when no vault has been configured yet.
+- Hide the save-records bulk retry action when there are no failed jobs to retry.
 
 ## 0.2.6 - 2026-07-06
 
