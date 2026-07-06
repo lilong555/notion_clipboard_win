@@ -1,5 +1,6 @@
 #include "config_page.h"
 
+#include "autostart.h"
 #include "config.h"
 #include "obsidian.h"
 #include "util.h"
@@ -371,6 +372,11 @@ std::vector<std::pair<std::string, std::string>> AddRootFolderOption(
     return output;
 }
 
+bool EffectiveStartWithWindows(const AppConfig &config, const std::filesystem::path &config_path)
+{
+    return config.start_with_windows_configured ? config.start_with_windows : IsAutoStartEnabled(config_path);
+}
+
 std::string BuildObsidianFolderGroupsJson(const std::vector<ObsidianFolderGroup> &groups)
 {
     std::ostringstream json;
@@ -412,6 +418,7 @@ std::filesystem::path WriteConfigPage(const AppConfig &config, const std::filesy
         BuildObsidianFolderGroups(config.obsidian_vault_dir, obsidian_vaults);
     const std::vector<std::pair<std::string, std::string>> current_obsidian_folder_options =
         CurrentObsidianFolderOptions(obsidian_folder_groups, config.obsidian_vault_dir);
+    const bool start_with_windows = EffectiveStartWithWindows(config, config_path);
 
     std::ostringstream html;
     html << R"(<!doctype html>
@@ -475,7 +482,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
     AddHotkeyInput(&html, config.hotkey);
     AddCheckbox(&html, "enable_hotkey", "启用全局热键", config.enable_hotkey);
     AddCheckbox(&html, "tray_notifications", "托盘通知", config.tray_notifications);
-    AddCheckbox(&html, "start_with_windows", "开机自动启动", config.start_with_windows);
+    AddCheckbox(&html, "start_with_windows", "开机自动启动", start_with_windows);
     html << "<details class=\"advanced\"><summary>高级：性能和重试</summary><p>这些参数用于限流、队列和本地状态保存。一般不需要修改。</p>\n";
     AddInput(&html, "state_dir", "状态目录", PathValue(config.state_dir));
     AddInput(&html, "duplicate_suppression_ms", "重复抑制 ms", std::to_string(config.duplicate_suppression_ms), "",
@@ -593,6 +600,8 @@ int RunConfigPageSelfTest()
         config.notion_token = "notion_secret";
         config.obsidian_vault_dir = root / L"vault";
         config.obsidian_tags = "algorithm cpp";
+        config.start_with_windows = true;
+        config.start_with_windows_configured = true;
         std::filesystem::create_directories(config.obsidian_vault_dir / L"aaa");
         std::filesystem::create_directories(config.obsidian_vault_dir / L"Clipboard");
         const std::filesystem::path second_vault_dir = root / L"vault2";
@@ -682,6 +691,7 @@ int RunConfigPageSelfTest()
                                        "录制热键", "热键只能通过录制修改",
                                        "高级：性能和重试", "这些参数用于限流、队列和本地状态保存。",
                                        "data-key=\"state_dir\"", "data-key=\"duplicate_suppression_ms\"",
+                                       "data-key=\"start_with_windows\" type=\"checkbox\" checked",
                                        "data-key=\"max_clipboard_bytes\"", "data-key=\"min_request_interval_ms\"",
                                        "data-key=\"append_batch_size\"", "data-key=\"max_retry_attempts\"",
                                        "data-key=\"http_retry_attempts\"",
