@@ -675,7 +675,9 @@ int RunConfigPageSelfTest()
                 }
             }
             for (const char *needle : {"data-target-option=\"yuque\"", "data-target-option=\"feishu_doc\"",
-                                        "data-target-option=\"webhook\"", "yuque_namespace", "feishu_app_secret",
+                                        "data-target-option=\"webhook\"", "data-target-option=\"markdown_file\"",
+                                        "markdown_file", "Markdown 文件",
+                                        "yuque_namespace", "feishu_app_secret",
                                         "webhook_url", "markdown_output_dir", "enable_clipboard_listener",
                                         "未来支持", "Webhook、语雀和飞书文档",
                                         "自动监听剪贴板", "debounce_ms", "id=\"previewObsidian\"", "id=\"obsidianPreview\"",
