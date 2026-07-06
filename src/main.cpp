@@ -78,6 +78,7 @@ using ncw::RunDryRunText;
 using ncw::RunConfigPageSelfTest;
 using ncw::RunConfigSelfTest;
 using ncw::RunObsidianSelfTest;
+using ncw::UniqueTempDirectoryPath;
 using ncw::RunSelfTest;
 using ncw::RunUploadCenterSelfTest;
 using ncw::RunUploadTargetSelfTest;
@@ -2081,6 +2082,9 @@ void WriteFileIfMissing(const std::filesystem::path &path, const std::string &co
     }
 }
 
+AppConfig LoadConfigFromProtocolUrlOrContent(const std::string &url, const std::filesystem::path &config_path,
+                                             std::filesystem::path *temp_path);
+
 int ApplyConfigUrlAndRestart(const std::string &url)
 {
     std::optional<std::string> content_value = QueryValue(url, "content");
@@ -2126,9 +2130,20 @@ int ApplyConfigUrlAndRestart(const std::string &url)
 int OpenConfigPageUrl(const std::string &url)
 {
     const std::filesystem::path config_path = ConfigPathFromProtocolUrl(url, "配置页面");
-    const AppConfig config = LoadConfig(config_path);
-    const std::filesystem::path page_path = WriteConfigPage(config, config_path);
-    OpenPathWithShell(page_path, "打开配置页面");
+    std::filesystem::path temp_path;
+    std::error_code ignored;
+    try
+    {
+        const AppConfig config = LoadConfigFromProtocolUrlOrContent(url, config_path, &temp_path);
+        const std::filesystem::path page_path = WriteConfigPage(config, config_path);
+        std::filesystem::remove(temp_path, ignored);
+        OpenPathWithShell(page_path, "打开配置页面");
+    }
+    catch (...)
+    {
+        std::filesystem::remove(temp_path, ignored);
+        throw;
+    }
     return 0;
 }
 
@@ -2303,8 +2318,7 @@ int RunMainSelfTest()
         }
     };
 
-    const fs::path root =
-        fs::temp_directory_path() / (L"notion-clipboard-win-main-test-" + std::to_wstring(NowUnixMs()));
+    const fs::path root = UniqueTempDirectoryPath(L"notion-clipboard-win-main-test");
     std::error_code ignored;
     fs::remove_all(root, ignored);
 

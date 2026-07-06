@@ -5,6 +5,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cctype>
 #include <fstream>
@@ -283,6 +284,19 @@ std::string IsoUtcTimestampFromUnixMs(std::uint64_t unix_ms)
         << std::setw(2) << time.wDay << "T" << std::setw(2) << time.wHour << ":" << std::setw(2) << time.wMinute
         << ":" << std::setw(2) << time.wSecond << "Z";
     return oss.str();
+}
+
+fs::path UniqueTempDirectoryPath(const std::wstring &prefix)
+{
+    static std::atomic<std::uint64_t> counter{0};
+    std::wstring name = prefix;
+    name += L"-";
+    name += std::to_wstring(NowUnixMs());
+    name += L"-p";
+    name += std::to_wstring(GetCurrentProcessId());
+    name += L"-";
+    name += std::to_wstring(counter.fetch_add(1, std::memory_order_relaxed) + 1);
+    return fs::temp_directory_path() / name;
 }
 
 fs::path ModuleDirectory()

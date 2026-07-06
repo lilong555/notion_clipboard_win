@@ -461,6 +461,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
                              "新建/手动输入...", "Inbox/Clipboard", "选择已有目录；手动输入的新目录会自动创建。");
     AddInput(&html, "obsidian_tags", "Obsidian 标签", config.obsidian_tags, "可选，逗号/空格分隔，例如 algorithm cpp");
     html << "<div class=\"wide location\" id=\"obsidianLocation\"></div>\n";
+    html << "<small class=\"wide\">更换仓库或在磁盘中新建文件夹后，点击“重新扫描 Obsidian”刷新列表；这不会保存配置。</small>\n";
     AddSectionEnd(&html);
 
     AddSectionStart(&html, "应用行为", "常用开关；高级运行参数保持默认即可。");
@@ -539,7 +540,7 @@ document.querySelectorAll("[data-custom-key]").forEach(custom=>custom.addEventLi
 applyButton.addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送配置给托盘应用，应用会校验、写入并重启。"; location.href="notion-clipboard-win:/apply-config/?path="+encodeURIComponent(configPath)+"&content="+encodeURIComponent(iniBox.value);});
 document.getElementById("testUpload").addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送测试保存请求，结果会写入并打开保存记录。"; location.href=protocolUrlWithOutput("test-upload");});
 document.getElementById("openUploadCenter").addEventListener("click",()=>{location.href=protocolUrl("open-upload-center");});
-document.getElementById("refreshObs").addEventListener("click",()=>{location.href=protocolUrl("open-config-page"); setTimeout(()=>location.reload(),1200);});
+document.getElementById("refreshObs").addEventListener("click",()=>{build(); statusBox.className="status ok"; statusBox.textContent="已请求按当前页面内容重新扫描 Obsidian；这不会保存配置。"; location.href=protocolUrlWithOutput("open-config-page"); setTimeout(()=>location.reload(),1200);});
 document.getElementById("copy").addEventListener("click",async()=>{build(); await navigator.clipboard.writeText(iniBox.value);});
 const hotkeyInput=document.getElementById("hotkeyInput");
 const hotkeyHelp=document.getElementById("hotkeyHelp");
@@ -572,9 +573,7 @@ int RunConfigPageSelfTest()
         ok = false;
     };
 
-    const std::filesystem::path root =
-        std::filesystem::temp_directory_path() / (L"notion-clipboard-win-config-page-test-" +
-                                                  std::to_wstring(NowUnixMs()));
+    const std::filesystem::path root = UniqueTempDirectoryPath(L"notion-clipboard-win-config-page-test");
     std::error_code ignored;
     std::filesystem::remove_all(root, ignored);
 
@@ -635,13 +634,15 @@ int RunConfigPageSelfTest()
                                        "data-choice-target=\"obsidian_folder\"", "data-custom-key=\"obsidian_vault_dir\"",
                                        "data-custom-key=\"obsidian_folder\"", "新建/手动输入...", "value=\"aaa\"",
                                        "仓库根目录", "未匹配到已注册仓库", "尚未选择仓库",
-                                       "data-key=\"obsidian_tags\"", "Obsidian 标签", "algorithm cpp",
+                                        "data-key=\"obsidian_tags\"", "Obsidian 标签", "algorithm cpp",
+                                       "更换仓库或在磁盘中新建文件夹后",
                                        "const obsidianFolderGroups=", "\"key\":", "obsidianFolderGroupMap",
                                        "normalizePathKey(path)", "findObsidianFolderGroup(vault)",
                                         "CUSTOM_PICKER_VALUE", "id=\"obsidianLocation\"", "Obsidian 写入位置：",
                                         "joinObsidianPath(vault,folder)", "updateObsidianLocation()",
                                         "refreshObsidianFolders()", "重新扫描 Obsidian",
-                                        "protocolUrl(\"open-config-page\")", "targetValue(el)", "targetLabel(value)",
+                                        "protocolUrlWithOutput(\"open-config-page\")", "按当前页面内容重新扫描 Obsidian",
+                                        "targetValue(el)", "targetLabel(value)",
                                         "selected.map(targetLabel).join(\"、\")", "syncTargets()",
                                          "保存配置", "高级：查看或导出 ini", "这里包含 token，仅用于手动备份或迁移配置。",
                                          "配置文件：",

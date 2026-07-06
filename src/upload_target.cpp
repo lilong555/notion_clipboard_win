@@ -1583,8 +1583,7 @@ int RunUploadTargetSelfTest()
         ok = false;
     };
 
-    const fs::path root =
-        fs::temp_directory_path() / (L"notion-clipboard-win-target-test-" + std::to_wstring(NowUnixMs()));
+    const fs::path root = UniqueTempDirectoryPath(L"notion-clipboard-win-target-test");
     std::error_code ignored;
     fs::remove_all(root, ignored);
     const std::wstring old_experimental_env = GetEnvWide(L"NCW_ENABLE_EXPERIMENTAL_TARGETS");

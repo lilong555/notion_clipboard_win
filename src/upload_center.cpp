@@ -853,8 +853,7 @@ int RunUploadCenterSelfTest()
         ok = false;
     };
 
-    const fs::path root = fs::temp_directory_path() / (L"notion-clipboard-win-upload-center-test-" +
-                                                       std::to_wstring(NowUnixMs()));
+    const fs::path root = UniqueTempDirectoryPath(L"notion-clipboard-win-upload-center-test");
     std::error_code ignored;
     fs::remove_all(root, ignored);
 

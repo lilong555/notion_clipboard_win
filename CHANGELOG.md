@@ -10,6 +10,8 @@
 - Add a CI status badge and pull request template for contributor checks.
 - Expand `.gitattributes` coverage for source, workflow, script, and binary files.
 - Show the app version in `--help`, `--version`, the tray tooltip, and the local configuration page.
+- Let the configuration page rescan Obsidian folders using the current unsaved page values.
+- Make self-test temporary directories unique across parallel test processes.
 
 ## 0.2.5 - 2026-07-06
 

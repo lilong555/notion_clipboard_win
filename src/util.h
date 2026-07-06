@@ -24,6 +24,7 @@ void UpsertConfigValue(const std::filesystem::path &path, const std::string &key
 std::uint64_t NowUnixMs();
 std::string LocalTimestamp();
 std::string IsoUtcTimestampFromUnixMs(std::uint64_t unix_ms);
+std::filesystem::path UniqueTempDirectoryPath(const std::wstring &prefix);
 
 std::filesystem::path ModuleDirectory();
 std::wstring GetEnvWide(const wchar_t *name);
