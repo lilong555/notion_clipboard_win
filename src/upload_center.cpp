@@ -550,6 +550,53 @@ std::string QueueLocation(const UploadJob &job)
     return job.remote_url.empty() ? job.remote_id : job.remote_url;
 }
 
+std::string DisplayTargetName(const std::string &target)
+{
+    if (target == "notion")
+    {
+        return "Notion";
+    }
+    if (target == "obsidian")
+    {
+        return "Obsidian";
+    }
+    if (target == "markdown_file")
+    {
+        return "Markdown 文件";
+    }
+    if (target == "webhook")
+    {
+        return "Webhook";
+    }
+    if (target == "yuque")
+    {
+        return "语雀";
+    }
+    if (target == "feishu_doc")
+    {
+        return "飞书文档";
+    }
+    if (target == "configuration")
+    {
+        return "配置测试";
+    }
+    return target;
+}
+
+std::string DisplayRecentStatus(const std::string &status)
+{
+    const std::string normalized = ToLowerAscii(Trim(status));
+    if (normalized == "success")
+    {
+        return "成功";
+    }
+    if (normalized == "failed")
+    {
+        return "失败";
+    }
+    return status.empty() ? "未知" : status;
+}
+
 void AppendCopyButton(std::ostringstream *html, const std::string &value, const std::string &label)
 {
     if (Trim(value).empty())
@@ -601,12 +648,13 @@ void AppendRecentTable(std::ostringstream *html, const std::vector<RecentRecord>
                                      : !record.notion_page_id.empty() ? record.notion_page_id
                                                                       : "";
         const std::string row_class = ToLowerAscii(record.status) == "success" ? "ok" : "bad";
-        *html << "<tr><td><span class=\"pill " << row_class << "\">" << HtmlEscape(record.status) << "</span>";
+        *html << "<tr><td><span class=\"pill " << row_class << "\">" << HtmlEscape(DisplayRecentStatus(record.status))
+              << "</span>";
         if (!record.error.empty())
         {
             *html << "<div class=\"error\">" << HtmlEscape(record.error) << "</div>";
         }
-        *html << "</td><td>" << HtmlEscape(record.timestamp) << "</td><td>" << HtmlEscape(record.target)
+        *html << "</td><td>" << HtmlEscape(record.timestamp) << "</td><td>" << HtmlEscape(DisplayTargetName(record.target))
               << "</td><td>" << HtmlEscape(record.title) << "</td><td class=\"location\">" << HtmlEscape(location)
               << "</td><td class=\"actions\">";
         AppendOpenLink(html, open_url, "打开");
@@ -633,9 +681,9 @@ void AppendQueueTable(std::ostringstream *html, const std::vector<QueueRecord> &
         const std::string file_uri = BuildFileUriFromUtf8Path(WideToUtf8(record.path.wstring()));
         const std::string error = record.load_error.empty() ? record.job.last_error : record.load_error;
         *html << "<tr><td><span class=\"pill queue\">" << HtmlEscape(record.state) << "</span></td><td>"
-              << HtmlEscape(DisplayTime(record.job.not_before_ms)) << "</td><td>" << HtmlEscape(record.job.target)
-              << "</td><td>" << HtmlEscape(record.job.title) << "<div class=\"muted\">" << HtmlEscape(record.job.id)
-              << "</div>";
+              << HtmlEscape(DisplayTime(record.job.not_before_ms)) << "</td><td>"
+              << HtmlEscape(DisplayTargetName(record.job.target)) << "</td><td>" << HtmlEscape(record.job.title)
+              << "<div class=\"muted\">" << HtmlEscape(record.job.id) << "</div>";
         if (!location.empty())
         {
             *html << "<div class=\"muted\">" << HtmlEscape(location) << "</div>";
@@ -759,7 +807,7 @@ section{background:var(--panel);border:1px solid var(--line);border-radius:8px;m
 <header><div class="bar"><div><h1>保存记录</h1><div class="path">本地保存记录和重试队列</div></div><div class="toolbar"><a class="button" href=")"
          << HtmlEscape(refresh_url) << R"(">刷新状态</a><a class="button" href=")"
          << HtmlEscape(retry_failed_url)
-         << R"HTML(" onclick="return confirm('将 failed 目录中的任务移回等待队列并立即重试。继续吗？')">重试失败任务</a></div></div></header>
+         << R"HTML(" onclick="return confirm('将失败任务移回等待队列并立即重试。继续吗？')">重试失败任务</a></div></div></header>
 <main class="wrap">
 <div class="metrics"><div class="metric"><strong>)HTML"
          << recent_records.size() << R"(</strong><span>最近记录</span></div><div class="metric"><strong>)"
@@ -856,14 +904,17 @@ int RunUploadCenterSelfTest()
                                     "Queued Title", "temporary error", "Failed Queue Title", "permanent error",
                                     "页面是打开时生成的本地快照", "data-copy=", "本地保存记录和重试队列",
                                     "open-upload-center", "刷新状态", "retry-failed-uploads", "重试失败任务",
-                                    "retry-failed-job", "重试此项"})
+                                    "retry-failed-job", "重试此项", "成功", "失败", ">Notion</td>",
+                                    ">Obsidian</td>", "将失败任务移回等待队列并立即重试。继续吗？"})
         {
             if (html.find(needle) == std::string::npos)
             {
                 fail(std::string("missing expected upload center content: ") + needle);
             }
         }
-        for (const char *needle : {"打开状态目录", "原始报告", "上传中心", "最近上传", "还没有上传记录"})
+        for (const char *needle : {"打开状态目录", "原始报告", "上传中心", "最近上传", "还没有上传记录",
+                                   "SUCCESS</span>", "FAILED</span>", ">notion</td>", ">obsidian</td>",
+                                   "failed 目录"})
         {
             if (html.find(needle) != std::string::npos)
             {
