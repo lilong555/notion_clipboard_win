@@ -1568,7 +1568,7 @@ std::unique_ptr<UploadTarget> CreateUploadTarget(const AppConfig &config, Logger
     return std::make_unique<MultiUploadTarget>(config, logger, targets);
 }
 
-std::string BuildObsidianMarkdownPreview(const std::string &content, const std::string &obsidian_tags)
+std::string BuildObsidianMarkdownDebugDocument(const std::string &content, const std::string &obsidian_tags)
 {
     UploadJob job = MakeTestUploadJob(content, "obsidian");
     return BuildMarkdownDocument(job, true, false, ParseObsidianTags(obsidian_tags));

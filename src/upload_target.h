@@ -21,6 +21,6 @@ public:
 };
 
 std::unique_ptr<UploadTarget> CreateUploadTarget(const AppConfig &config, Logger *logger);
-std::string BuildObsidianMarkdownPreview(const std::string &content, const std::string &obsidian_tags);
+std::string BuildObsidianMarkdownDebugDocument(const std::string &content, const std::string &obsidian_tags);
 int RunUploadTargetSelfTest();
 }

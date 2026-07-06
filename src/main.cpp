@@ -44,7 +44,7 @@ using ncw::CreateGeneratedAppIcon;
 using ncw::LastErrorMessage;
 using ncw::AppConfig;
 using ncw::AtomicWriteFile;
-using ncw::BuildObsidianMarkdownPreview;
+using ncw::BuildObsidianMarkdownDebugDocument;
 using ncw::BuildTextBlocks;
 using ncw::BuildTitleFromContent;
 using ncw::CliOptions;
@@ -2491,10 +2491,10 @@ int RunObsidianDryRunFile(const std::filesystem::path &input_path, const std::fi
         throw std::runtime_error("输入文件没有可转换的文本");
     }
 
-    std::string output = BuildObsidianMarkdownPreview(input, obsidian_tags);
+    std::string output = BuildObsidianMarkdownDebugDocument(input, obsidian_tags);
     if (output.empty())
     {
-        throw std::runtime_error("Obsidian 预览内容为空");
+        throw std::runtime_error("Obsidian 调试内容为空");
     }
     if (output.back() != '\n')
     {
@@ -2609,21 +2609,21 @@ int RunMainSelfTest()
             }
         }
         {
-            const fs::path input_path = root / L"obsidian-preview-input.md";
-            const fs::path output_path = root / L"obsidian-preview-output.md";
+            const fs::path input_path = root / L"obsidian-debug-input.md";
+            const fs::path output_path = root / L"obsidian-debug-output.md";
             AtomicWriteFile(input_path,
-                            "预览标题\n\n"
+                            "调试标题\n\n"
                             "> 如果 DP 转移是\n"
                             "> [\n"
                             "> dp[i]=\\min_j{上一层dp[j]+cost(j,i)}\n"
                             "> ]\n");
             RunObsidianDryRunFile(input_path, output_path, "#算法 cpp", true);
-            const std::string preview = ReadWholeFile(output_path);
-            if (preview.find("---\ntags:\n  - \"算法\"\n  - \"cpp\"\n---\n\n# 预览标题\n\n> 如果 DP 转移是") != 0 ||
-                preview.find("> $$\n> dp[i]=\\min_j{上一层dp[j]+cost(j,i)}\n> $$") == std::string::npos ||
-                preview.find("# 预览标题\n\n预览标题") != std::string::npos)
+            const std::string debug_markdown = ReadWholeFile(output_path);
+            if (debug_markdown.find("---\ntags:\n  - \"算法\"\n  - \"cpp\"\n---\n\n# 调试标题\n\n> 如果 DP 转移是") != 0 ||
+                debug_markdown.find("> $$\n> dp[i]=\\min_j{上一层dp[j]+cost(j,i)}\n> $$") == std::string::npos ||
+                debug_markdown.find("# 调试标题\n\n调试标题") != std::string::npos)
             {
-                fail("dry-run-obsidian-file did not write full Obsidian preview");
+                fail("dry-run-obsidian-file did not write full Obsidian debug file");
             }
         }
 

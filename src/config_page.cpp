@@ -421,7 +421,7 @@ header{position:sticky;top:0;z-index:2;background:color-mix(in srgb,var(--panel)
 h1{font-size:20px;margin:0}.path{color:var(--muted);font-size:12px;word-break:break-all}.wrap{max-width:1180px;margin:0 auto;padding:20px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(360px,.9fr);gap:18px}
 section,.output{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px;margin-bottom:16px}h2{font-size:15px;margin:0 0 4px}p{margin:0 0 12px;color:var(--muted)}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}label{display:grid;gap:5px}label span{font-weight:600}input,select,textarea{width:100%;border:1px solid var(--line);background:var(--bg);color:var(--text);border-radius:6px;padding:9px 10px;font:inherit}
-small{color:var(--muted)}.check{grid-template-columns:auto 1fr;align-items:start}.check input{width:auto;margin-top:3px}.check small{grid-column:2}.wide{grid-column:1/-1}.preview{border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:6px;padding:9px 10px;background:var(--bg);color:var(--muted);word-break:break-all}.preview strong{color:var(--text)}
+small{color:var(--muted)}.check{grid-template-columns:auto 1fr;align-items:start}.check input{width:auto;margin-top:3px}.check small{grid-column:2}.wide{grid-column:1/-1}.location{border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:6px;padding:9px 10px;background:var(--bg);color:var(--muted);word-break:break-all}.location strong{color:var(--text)}
 .input-action{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}.input-action button{white-space:nowrap}.input-action input[readonly]{cursor:pointer}
 .actions{display:flex;gap:8px;flex-wrap:wrap}button,.download{border:0;border-radius:6px;background:var(--accent);color:white;padding:9px 12px;font-weight:600;cursor:pointer;text-decoration:none}button:disabled{opacity:.5;cursor:not-allowed}.secondary{background:var(--accent2)}
 textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-size:12px}.target{display:flex;gap:10px;align-items:flex-start}.target-list{display:flex;gap:8px;flex-wrap:wrap;max-width:780px}.target-list label{display:flex;grid-template-columns:none;gap:5px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);font-size:12px}.target-list input{width:auto}.hint{border-left:3px solid var(--accent);padding-left:10px;color:var(--muted)}
@@ -457,7 +457,7 @@ textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-si
                              AddRootFolderOption(current_obsidian_folder_options),
                              "新建/手动输入...", "Inbox/Clipboard", "选择已有目录；手动输入的新目录会自动创建。");
     AddInput(&html, "obsidian_tags", "Obsidian 标签", config.obsidian_tags, "可选，逗号/空格分隔，例如 algorithm cpp");
-    html << "<div class=\"wide preview\" id=\"obsidianPreview\"></div>\n";
+    html << "<div class=\"wide location\" id=\"obsidianLocation\"></div>\n";
     AddSectionEnd(&html);
 
     html << "<section><h2>未来支持</h2><p>Webhook、语雀和飞书文档暂不作为当前稳定上传后端，后续会在 Notion 与 Obsidian 体验稳定后继续打磨。</p></section>\n";
@@ -508,7 +508,7 @@ function selectedTargets(){return targetChecks.filter(el=>el.checked).map(target
 function isHotkeyTextValid(text){const tokens=(text||"").split("+").map(part=>part.trim()).filter(Boolean); if(tokens.length<2)return false; let modifiers=0; let keys=0; const keyNames=new Set(["backspace","delete","del","down","end","enter","esc","escape","home","insert","ins","left","pagedown","pageup","pgdn","pgup","pause","printscreen","prtsc","right","space","tab","up"]); for(const raw of tokens){const token=raw.toLowerCase(); if(token==="ctrl"||token==="control"||token==="alt"||token==="shift"||token==="win"||token==="windows"||token==="super"||token==="meta"){modifiers++; continue;} if(/^[a-z0-9]$/.test(token)||/^f([1-9]|1[0-9]|2[0-4])$/.test(token)||keyNames.has(token)){keys++; continue;} return false;} return modifiers>0&&keys===1;}
 function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个上传后端"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要 Data Source ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian Vault 不能为空"); return problems;}
 function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后将上传到："+selected.join("、")); applyButton.disabled=problems.length>0;}
-function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; document.getElementById("ini").value=text; document.getElementById("download").href=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); updateStatus(); updateObsidianPreview();}
+function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; document.getElementById("ini").value=text; document.getElementById("download").href=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); updateStatus(); updateObsidianLocation();}
 function protocolUrl(action){return "notion-clipboard-win:/"+action+"/?path="+encodeURIComponent(configPath);}
 function protocolUrlWithOutput(action){return protocolUrl(action)+"&content="+encodeURIComponent(document.getElementById("ini").value);}
 function syncTargets(){const selected=selectedTargets(); target.value=selected.join(","); build();}
@@ -517,11 +517,11 @@ const obsidianVaultInput=document.querySelector('[data-key="obsidian_vault_dir"]
 const obsidianFolderInput=document.querySelector('[data-key="obsidian_folder"]');
 const obsidianFolderSelect=document.querySelector('[data-choice-target="obsidian_folder"]');
 const obsidianFolderCustom=document.querySelector('[data-custom-key="obsidian_folder"]');
-const obsidianPreview=document.getElementById("obsidianPreview");
+const obsidianLocation=document.getElementById("obsidianLocation");
 function appendSelectOption(parent,value,text){const option=document.createElement("option"); option.value=value; option.textContent=text; parent.appendChild(option); return option;}
 function selectHasValue(select,value){return [...select.options].some(option=>option.value===value);}
 function joinObsidianPath(vault,folder){vault=(vault||"").trim(); folder=(folder||"").trim().replace(/^[\\/]+/,"").replace(/[\\/]+$/,""); if(!vault)return ""; if(!folder)return vault; return vault.replace(/[\\/]+$/,"")+"\\"+folder.replace(/[\\/]+/g,"\\");}
-function updateObsidianPreview(){if(!obsidianPreview)return; const vault=(obsidianVaultInput?.value||"").trim(); const folder=(obsidianFolderInput?.value||"").trim(); const location=joinObsidianPath(vault,folder); const group=findObsidianFolderGroup(vault); const count=group?(group.folders||[]).length:0; const scanText=group?`已扫描 ${count} 个子目录`:"未匹配到已注册 vault，可继续手动填写路径"; obsidianPreview.textContent=location?`Obsidian 写入位置：${location}（${scanText}）`:"Obsidian 写入位置：尚未选择 vault";}
+function updateObsidianLocation(){if(!obsidianLocation)return; const vault=(obsidianVaultInput?.value||"").trim(); const folder=(obsidianFolderInput?.value||"").trim(); const location=joinObsidianPath(vault,folder); const group=findObsidianFolderGroup(vault); const count=group?(group.folders||[]).length:0; const scanText=group?`已扫描 ${count} 个子目录`:"未匹配到已注册 vault，可继续手动填写路径"; obsidianLocation.textContent=location?`Obsidian 写入位置：${location}（${scanText}）`:"Obsidian 写入位置：尚未选择 vault";}
 function syncChoice(select){const key=select.dataset.choiceTarget; const hidden=document.querySelector(`[data-key="${key}"]`); const custom=document.querySelector(`[data-custom-key="${key}"]`); if(!hidden)return; if(select.value===CUSTOM_PICKER_VALUE){if(custom){custom.hidden=false; hidden.value=custom.value.trim();}}else{hidden.value=select.value; if(custom)custom.hidden=true;} if(key==="obsidian_vault_dir")refreshObsidianFolders(); build();}
 function refreshObsidianFolders(){if(!obsidianFolderSelect||!obsidianFolderInput)return; const vault=(obsidianVaultInput?.value||"").trim(); const group=findObsidianFolderGroup(vault); const folders=group?(group.folders||[]):[]; const current=obsidianFolderInput.value.trim(); obsidianFolderSelect.innerHTML=""; appendSelectOption(obsidianFolderSelect,"","Vault 根目录"); folders.forEach(folder=>appendSelectOption(obsidianFolderSelect,folder.value,folder.label)); appendSelectOption(obsidianFolderSelect,CUSTOM_PICKER_VALUE,folders.length?"新建/手动输入...":"手动输入/新建子目录..."); if(selectHasValue(obsidianFolderSelect,current)){obsidianFolderSelect.value=current; if(obsidianFolderCustom)obsidianFolderCustom.value="";}else{obsidianFolderSelect.value=CUSTOM_PICKER_VALUE; if(obsidianFolderCustom)obsidianFolderCustom.value=current;} syncChoice(obsidianFolderSelect);}
 targetChecks.forEach(el=>el.addEventListener("change",syncTargets));
@@ -624,8 +624,8 @@ int RunConfigPageSelfTest()
                                        "data-key=\"obsidian_tags\"", "Obsidian 标签", "algorithm cpp",
                                        "const obsidianFolderGroups=", "\"key\":", "obsidianFolderGroupMap",
                                        "normalizePathKey(path)", "findObsidianFolderGroup(vault)",
-                                       "CUSTOM_PICKER_VALUE", "id=\"obsidianPreview\"", "Obsidian 写入位置：",
-                                       "joinObsidianPath(vault,folder)", "updateObsidianPreview()",
+                                        "CUSTOM_PICKER_VALUE", "id=\"obsidianLocation\"", "Obsidian 写入位置：",
+                                        "joinObsidianPath(vault,folder)", "updateObsidianLocation()",
                                        "refreshObsidianFolders()", "重新扫描 Obsidian",
                                        "protocolUrl(\"open-config-page\")", "targetValue(el)", "syncTargets()",
                                         "id=\"validateOutputConfig\"", "验证配置",
@@ -657,7 +657,7 @@ int RunConfigPageSelfTest()
             for (const char *needle : {"data-target-option=\"yuque\"", "data-target-option=\"feishu_doc\"",
                                         "data-target-option=\"webhook\"", "yuque_namespace", "feishu_app_secret",
                                         "webhook_url", "markdown_output_dir", "enable_clipboard_listener",
-                                        "自动监听剪贴板", "debounce_ms", "id=\"previewObsidian\"",
+                                        "自动监听剪贴板", "debounce_ms", "id=\"previewObsidian\"", "id=\"obsidianPreview\"",
                                         "预览 Obsidian Markdown", "preview-obsidian-clipboard",
                                         "upload_initial_clipboard", "启动后上传当前剪贴板"})
             {
