@@ -1,5 +1,7 @@
 # Notion Clipboard Win
 
+[![CI](https://github.com/lilong555/notion_clipboard_win/actions/workflows/ci.yml/badge.svg)](https://github.com/lilong555/notion_clipboard_win/actions/workflows/ci.yml)
+
 语言：中文 | [English](README.en.md)
 
 Notion Clipboard Win 是一个 Windows 托盘工具。它可以把你复制的内容一键保存到 Notion 或 Obsidian，适合保存网页内容、题解、代码片段、学习笔记和带公式的 Markdown 文本。

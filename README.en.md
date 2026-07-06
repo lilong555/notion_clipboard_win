@@ -1,5 +1,7 @@
 # Notion Clipboard Win
 
+[![CI](https://github.com/lilong555/notion_clipboard_win/actions/workflows/ci.yml/badge.svg)](https://github.com/lilong555/notion_clipboard_win/actions/workflows/ci.yml)
+
 Language: [中文](README.md) | English
 
 Notion Clipboard Win is a Windows tray app that saves copied content to Notion or Obsidian with one hotkey. It is useful for web clips, solution notes, code snippets, study notes, Markdown text, and formula-heavy content.

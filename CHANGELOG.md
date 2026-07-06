@@ -7,6 +7,7 @@
 - Register the app self-test with CTest and run it through CTest in CI and contributor docs.
 - Gate future upload targets behind `NCW_ENABLE_EXPERIMENTAL_TARGETS` so stable configs stay focused on Notion and Obsidian.
 - Add GitHub issue forms for structured bug reports and feature requests.
+- Add a CI status badge and pull request template for contributor checks.
 
 ## 0.2.5 - 2026-07-06
 
