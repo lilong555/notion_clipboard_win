@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Configure console build
         run: cmake -S . -B build-console -DNOTION_CLIPBOARD_WIN_GUI=OFF
