@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Add a local save records page with recent results, waiting/final-failed queue visibility, refresh, and retry actions for failed items.
+- Simplify the tray and configuration-page surface around Notion and Obsidian, with future-only targets removed from the main user flow.
+- Use save-oriented wording across the tray menu, configuration page, save records, CLI help, logs, example config, and user documentation.
+- Move technical fields and raw ini output behind advanced sections, and keep debug-only Markdown preview and diagnostics out of the default UI.
+- Improve Obsidian Markdown output for quoted loose formulas, indexed formulas, and duplicate Markdown titles.
+- Avoid hardcoded installer versions in the README download instructions.
+
 ## 0.2.2 - 2026-07-05
 
 - Add a configuration-page test save action that writes a real test item to the selected Notion and/or Obsidian targets, then opens save records.
