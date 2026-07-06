@@ -461,8 +461,6 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
     html << "<div class=\"wide location\" id=\"obsidianLocation\"></div>\n";
     AddSectionEnd(&html);
 
-    html << "<section><h2>未来支持</h2><p>Webhook、语雀和飞书文档暂不作为当前稳定保存位置，后续会在 Notion 与 Obsidian 体验稳定后继续打磨。</p></section>\n";
-
     AddSectionStart(&html, "应用行为", "常用开关；高级运行参数保持默认即可。");
     AddHotkeyInput(&html, config.hotkey);
     AddCheckbox(&html, "enable_hotkey", "启用全局热键", config.enable_hotkey);
@@ -622,7 +620,7 @@ int RunConfigPageSelfTest()
         {
             const std::string html = ReadWholeFile(page);
             for (const char *needle : {"notion_secret", "value=\"obsidian\" data-target-option=\"obsidian\"",
-                                       "value=\"notion\" data-target-option=\"notion\"", "未来支持", "Webhook、语雀和飞书文档",
+                                       "value=\"notion\" data-target-option=\"notion\"",
                                         "notion,obsidian", "设置只保存在本机", "<strong>保存到</strong>",
                                         "至少选择一个保存位置",
                                        "Notion 数据源 ID", "Notion 需要数据源 ID 或 Database ID",
@@ -675,6 +673,7 @@ int RunConfigPageSelfTest()
             for (const char *needle : {"data-target-option=\"yuque\"", "data-target-option=\"feishu_doc\"",
                                         "data-target-option=\"webhook\"", "yuque_namespace", "feishu_app_secret",
                                         "webhook_url", "markdown_output_dir", "enable_clipboard_listener",
+                                        "未来支持", "Webhook、语雀和飞书文档",
                                         "自动监听剪贴板", "debounce_ms", "id=\"previewObsidian\"", "id=\"obsidianPreview\"",
                                         "预览 Obsidian Markdown", "preview-obsidian-clipboard",
                                         "upload_initial_clipboard", "启动后上传当前剪贴板",
