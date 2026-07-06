@@ -1994,6 +1994,60 @@ std::optional<QuoteLineParts> SplitObsidianQuoteLine(const std::string &line)
     return QuoteLineParts{line.substr(0, pos), line.substr(pos)};
 }
 
+std::string StripNestedQuoteMarkerForLooseEquationLine(const std::string &line)
+{
+    std::size_t pos = 0;
+    while (pos < line.size() && line[pos] == ' ')
+    {
+        ++pos;
+    }
+    if (pos >= line.size() || line[pos] != '>')
+    {
+        return line;
+    }
+
+    ++pos;
+    if (pos < line.size() && line[pos] == ' ')
+    {
+        ++pos;
+    }
+    return line.substr(pos);
+}
+
+std::string JoinEquationLines(const std::vector<std::string> &lines)
+{
+    std::ostringstream output;
+    for (std::size_t i = 0; i < lines.size(); ++i)
+    {
+        if (i > 0)
+        {
+            output << "\n";
+        }
+        output << lines[i];
+    }
+    return output.str();
+}
+
+std::string BestQuotedLooseEquationExpression(const std::vector<std::string> &lines)
+{
+    std::vector<std::string> stripped_lines;
+    stripped_lines.reserve(lines.size());
+    bool stripped_any = false;
+    for (const std::string &line : lines)
+    {
+        std::string stripped = StripNestedQuoteMarkerForLooseEquationLine(line);
+        stripped_any = stripped_any || stripped != line;
+        stripped_lines.push_back(std::move(stripped));
+    }
+
+    const std::string stripped_expression = JoinEquationLines(stripped_lines);
+    if (stripped_any && LooksLikeBlockLatexExpression(stripped_expression))
+    {
+        return stripped_expression;
+    }
+    return JoinEquationLines(lines);
+}
+
 std::string JoinLinesPreserveFinalEmpty(const std::vector<std::string> &lines)
 {
     std::ostringstream output;
@@ -2039,7 +2093,7 @@ std::string NormalizeMarkdownForObsidian(const std::string &text)
             quote.has_value() && IsLooseBracketEquationFenceStart(Trim(quote->content)))
         {
             std::size_t cursor = i + 1;
-            std::string expression;
+            std::vector<std::string> expression_lines;
             bool has_closing = false;
             while (cursor < lines.size())
             {
@@ -2053,13 +2107,10 @@ std::string NormalizeMarkdownForObsidian(const std::string &text)
                     has_closing = true;
                     break;
                 }
-                if (!expression.empty())
-                {
-                    expression += "\n";
-                }
-                expression += current->content;
+                expression_lines.push_back(current->content);
                 ++cursor;
             }
+            const std::string expression = BestQuotedLooseEquationExpression(expression_lines);
             if (has_closing && LooksLikeBlockLatexExpression(expression))
             {
                 const std::string repaired = RepairLatexExpression(DedentBlockText(expression));
