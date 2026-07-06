@@ -3,6 +3,7 @@
 #include "config.h"
 #include "obsidian.h"
 #include "util.h"
+#include "version.h"
 #include "win_util.h"
 
 #include <algorithm>
@@ -430,7 +431,8 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
 </style>
 </head>
 <body>
-<header><div class="bar"><div><h1>Notion Clipboard Win 配置</h1><div class="path">设置只保存在本机</div></div><div class="target"><strong>保存到</strong><input data-key="upload_target" id="target" type="hidden"><div class="target-list" id="targetList">
+<header><div class="bar"><div><h1>Notion Clipboard Win 配置</h1><div class="path">版本 )"
+         << HtmlEscape(kAppVersion) << R"( · 设置只保存在本机</div></div><div class="target"><strong>保存到</strong><input data-key="upload_target" id="target" type="hidden"><div class="target-list" id="targetList">
 <label><input type="checkbox" value="notion" data-target-option="notion">Notion</label><label><input type="checkbox" value="obsidian" data-target-option="obsidian">Obsidian</label>
 </div></div></div></header>
 <main class="wrap"><div>
@@ -621,7 +623,8 @@ int RunConfigPageSelfTest()
             const std::string html = ReadWholeFile(page);
             for (const char *needle : {"notion_secret", "value=\"obsidian\" data-target-option=\"obsidian\"",
                                        "value=\"notion\" data-target-option=\"notion\"",
-                                        "notion,obsidian", "设置只保存在本机", "<strong>保存到</strong>",
+                                        "notion,obsidian", kAppVersion, "版本 ", "设置只保存在本机",
+                                        "<strong>保存到</strong>",
                                         "至少选择一个保存位置",
                                        "Notion 数据源 ID", "Notion 需要数据源 ID 或 Database ID",
                                        "高级：Notion 属性", "标题属性通常会自动识别",

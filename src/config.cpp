@@ -2,6 +2,7 @@
 
 #include "hotkey.h"
 #include "util.h"
+#include "version.h"
 #include "win_util.h"
 
 #include <algorithm>
@@ -381,6 +382,10 @@ CliOptions ParseCli(int argc, wchar_t **argv)
         {
             options.help = true;
         }
+        else if (arg == L"--version" || arg == L"-v")
+        {
+            options.version = true;
+        }
         else if (arg == L"--once")
         {
             options.once = true;
@@ -522,9 +527,10 @@ CliOptions ParseCli(int argc, wchar_t **argv)
 std::string BuildHelpText()
 {
     std::ostringstream help;
-    help << "Notion Clipboard Win\n\n"
+    help << "Notion Clipboard Win " << kAppVersion << "\n\n"
          << "用法:\n"
          << "  notion_clipboard_win.exe [--config path]              启动后台托盘进程\n"
+         << "  notion_clipboard_win.exe --version                   显示版本号\n"
          << "  notion_clipboard_win.exe --once [--config path]       只保存当前剪贴板一次\n"
          << "  notion_clipboard_win.exe --dry-run --once             读取剪贴板但不保存\n\n"
          << "  notion_clipboard_win.exe --self-test                  运行本地转换回归测试\n\n"
@@ -538,6 +544,11 @@ std::string BuildHelpText()
          << "配置默认路径:\n"
          << "  " << WideToUtf8(DefaultConfigPath().wstring()) << "\n";
     return help.str();
+}
+
+void PrintVersion()
+{
+    std::cout << "Notion Clipboard Win " << kAppVersion << "\n";
 }
 
 void PrintHelp()
@@ -557,7 +568,7 @@ int RunConfigSelfTest()
     try
     {
         const std::string help = BuildHelpText();
-        for (const char *needle : {"Notion Clipboard Win", "--once", "--dry-run-file",
+        for (const char *needle : {"Notion Clipboard Win", kAppVersion, "--version", "--once", "--dry-run-file",
                                    "--open-config-page-on-start",
                                    "upload_target=notion 或 upload_target=notion,obsidian",
                                    "支持: notion、obsidian"})
@@ -593,6 +604,14 @@ int RunConfigSelfTest()
         if (test_upload_options.test_upload_url.empty())
         {
             fail("hidden --test-upload-url compatibility flag was not parsed");
+        }
+
+        wchar_t version_flag[] = L"--version";
+        wchar_t *version_argv[] = {exe, version_flag};
+        const CliOptions version_options = ParseCli(2, version_argv);
+        if (!version_options.version)
+        {
+            fail("--version flag was not parsed");
         }
 
         AppConfig experimental_config;

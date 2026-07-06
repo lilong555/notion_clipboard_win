@@ -9,6 +9,7 @@
 - Add GitHub issue forms for structured bug reports and feature requests.
 - Add a CI status badge and pull request template for contributor checks.
 - Expand `.gitattributes` coverage for source, workflow, script, and binary files.
+- Show the app version in `--help`, `--version`, the tray tooltip, and the local configuration page.
 
 ## 0.2.5 - 2026-07-06
 

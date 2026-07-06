@@ -27,6 +27,7 @@ set(NCW_VERSION_PATCH "${PROJECT_VERSION_PATCH}")
 set(NCW_VERSION_BUILD "0")
 set(NCW_VERSION_STRING "${PROJECT_VERSION}")
 configure_file(src/app.rc.in "${CMAKE_CURRENT_BINARY_DIR}/app.rc" @ONLY)
+configure_file(src/version.h.in "${CMAKE_CURRENT_BINARY_DIR}/version.h" @ONLY)
 
 add_executable(notion_clipboard_win
     src/main.cpp
@@ -58,6 +59,10 @@ target_compile_definitions(notion_clipboard_win PRIVATE
     _UNICODE
     WIN32_LEAN_AND_MEAN
     NOMINMAX
+)
+
+target_include_directories(notion_clipboard_win PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
 target_link_libraries(notion_clipboard_win PRIVATE

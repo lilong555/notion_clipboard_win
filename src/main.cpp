@@ -14,6 +14,7 @@
 #include "upload_center.h"
 #include "upload_target.h"
 #include "util.h"
+#include "version.h"
 #include "win_util.h"
 
 #include <algorithm>
@@ -60,6 +61,7 @@ using ncw::HotkeySpecFromRecordedKey;
 using ncw::IsoUtcTimestampFromUnixMs;
 using ncw::IsAutoStartEnabled;
 using ncw::IsModifierVirtualKey;
+using ncw::kAppVersion;
 using ncw::Logger;
 using ncw::LoadConfig;
 using ncw::ModuleDirectory;
@@ -69,6 +71,7 @@ using ncw::ParseHotkeyOrThrow;
 using ncw::ParseCli;
 using ncw::ParseUploadTargets;
 using ncw::PrintHelp;
+using ncw::PrintVersion;
 using ncw::PersistentQueue;
 using ncw::ReadWholeFile;
 using ncw::RunDryRunText;
@@ -1088,7 +1091,8 @@ private:
         nid_.uCallbackMessage = kTrayCallbackMessage;
         nid_.hIcon =
             tray_icon_ != nullptr ? tray_icon_ : (app_icon_ != nullptr ? app_icon_ : LoadIconW(nullptr, IDI_APPLICATION));
-        wcsncpy_s(nid_.szTip, kAppDisplayName, _TRUNCATE);
+        const std::wstring tray_tip = std::wstring(kAppDisplayName) + L" " + Utf8ToWide(kAppVersion);
+        wcsncpy_s(nid_.szTip, tray_tip.c_str(), _TRUNCATE);
 
         const DWORD action = tray_icon_added_ ? NIM_MODIFY : NIM_ADD;
         if (!Shell_NotifyIconW(action, &nid_))
@@ -2615,6 +2619,11 @@ int AppMain(int argc, wchar_t **argv)
     if (cli.help)
     {
         PrintHelp();
+        return 0;
+    }
+    if (cli.version)
+    {
+        PrintVersion();
         return 0;
     }
     if (cli.self_test)

@@ -164,7 +164,7 @@ The app supports common `$...$`, `$$...$$`, `\(...\)`, and `\[...\]` formulas. I
 
 ## Reporting Issues
 
-Use the Bug report form in GitHub Issues when possible. Include the app version, Windows version, save target, smallest reproducible source text, and the save records error. Do not include Notion tokens, database IDs, or private note content.
+Use the Bug report form in GitHub Issues when possible. Include the app version, Windows version, save target, smallest reproducible source text, and the save records error. The app version is shown at the top of the configuration page and in the tray tooltip. Do not include Notion tokens, database IDs, or private note content.
 
 ## Manual Configuration Examples
 

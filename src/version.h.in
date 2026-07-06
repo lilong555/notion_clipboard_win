@@ -1,0 +1,6 @@
+#pragma once
+
+namespace ncw
+{
+constexpr const char *kAppVersion = "@NCW_VERSION_STRING@";
+}

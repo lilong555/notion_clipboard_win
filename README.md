@@ -164,7 +164,7 @@ Notion 的代码高亮依赖代码块语言。程序会尽量识别 `cpp`、`sql
 
 ## 反馈问题
 
-请优先使用 GitHub Issues 里的 Bug report 表单。反馈时附上应用版本、Windows 版本、保存目标、最小可复现原文和保存记录里的错误。不要提交 Notion token、数据库 ID 或私人笔记内容。
+请优先使用 GitHub Issues 里的 Bug report 表单。反馈时附上应用版本、Windows 版本、保存目标、最小可复现原文和保存记录里的错误。应用版本可在配置页顶部查看，也可以把鼠标悬停在托盘图标上查看。不要提交 Notion token、数据库 ID 或私人笔记内容。
 
 ## 手动配置示例
 
