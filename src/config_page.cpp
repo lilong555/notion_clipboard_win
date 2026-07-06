@@ -424,7 +424,7 @@ section,.output{background:var(--panel);border:1px solid var(--line);border-radi
 small{color:var(--muted)}.check{grid-template-columns:auto 1fr;align-items:start}.check input{width:auto;margin-top:3px}.check small{grid-column:2}.wide{grid-column:1/-1}.location{border:1px solid var(--line);border-left:3px solid var(--accent2);border-radius:6px;padding:9px 10px;background:var(--bg);color:var(--muted);word-break:break-all}.location strong{color:var(--text)}
 .input-action{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px;align-items:center}.input-action button{white-space:nowrap}.input-action input[readonly]{cursor:pointer}
 .actions{display:flex;gap:8px;flex-wrap:wrap}button,.download{border:0;border-radius:6px;background:var(--accent);color:white;padding:9px 12px;font-weight:600;cursor:pointer;text-decoration:none}button:disabled{opacity:.5;cursor:not-allowed}.secondary{background:var(--accent2)}
-textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-size:12px}.target{display:flex;gap:10px;align-items:flex-start}.target-list{display:flex;gap:8px;flex-wrap:wrap;max-width:780px}.target-list label{display:flex;grid-template-columns:none;gap:5px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);font-size:12px}.target-list input{width:auto}.hint{border-left:3px solid var(--accent);padding-left:10px;color:var(--muted)}
+textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-size:12px}.target{display:flex;gap:10px;align-items:flex-start}.target-list{display:flex;gap:8px;flex-wrap:wrap;max-width:780px}.target-list label{display:flex;grid-template-columns:none;gap:5px;align-items:center;border:1px solid var(--line);border-radius:6px;padding:6px 8px;background:var(--bg);font-size:12px}.target-list input{width:auto}.hint{border-left:3px solid var(--accent);padding-left:10px;color:var(--muted)}.advanced{margin-top:14px;border-top:1px solid var(--line);padding-top:12px}.advanced summary{cursor:pointer;font-weight:700}.advanced p{margin:8px 0 10px}
 .status{margin:10px 0 12px;border:1px solid var(--line);border-left-width:3px;border-radius:6px;padding:9px 10px;color:var(--muted);background:var(--bg)}.status.ok{border-left-color:var(--ok);color:var(--ok)}.status.error{border-left-color:var(--danger);color:var(--danger)}
 @media (max-width:900px){.wrap{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.bar{align-items:flex-start;flex-direction:column}}
 </style>
@@ -483,7 +483,7 @@ textarea{min-height:520px;resize:vertical;font-family:Consolas,monospace;font-si
     AddSectionEnd(&html);
 
     html << R"(
-</div><aside class="output"><h2>输出 ini</h2><p class="hint">页面会输出包含 token 的完整配置。点击“应用并重启”会写入当前配置文件并重启托盘进程。</p><div id="status" class="status" role="status"></div><div class="actions"><button id="apply">应用并重启</button><button id="testUpload" class="secondary">测试上传</button><button id="openUploadCenter" class="secondary">上传中心</button><button id="refreshObs">重新扫描 Obsidian</button><button id="copy">复制配置</button><a id="download" class="download secondary" download="notion_clipboard_win.ini">下载 ini</a><button id="reveal" class="secondary">显示/隐藏 token</button></div><textarea id="ini" spellcheck="false"></textarea></aside></main>
+</div><aside class="output"><h2>保存配置</h2><p class="hint">完成后点击“应用并重启”，托盘进程会读取新设置。需要先试写一条内容时，点击“测试上传”。</p><div id="status" class="status" role="status"></div><div class="actions"><button id="apply">应用并重启</button><button id="testUpload" class="secondary">测试上传</button><button id="openUploadCenter" class="secondary">上传中心</button><button id="refreshObs">重新扫描 Obsidian</button><button id="reveal" class="secondary">显示/隐藏 token</button></div><details class="advanced"><summary>高级：查看或导出 ini</summary><p>这里包含 token，仅用于手动备份或调试。</p><div class="actions"><button id="copy">复制配置</button><a id="download" class="download secondary" download="notion_clipboard_win.ini">下载 ini</a></div><textarea id="ini" readonly spellcheck="false"></textarea></details></aside></main>
 <script>
 const order=["upload_target","notion_token","data_source_id","database_id","title_property_name","content_property_name","content_property_max_chars","created_time_property_name","obsidian_vault_dir","obsidian_folder","obsidian_tags","state_dir","hotkey","enable_hotkey","tray_notifications","start_with_windows","duplicate_suppression_ms","max_clipboard_bytes","min_request_interval_ms","append_batch_size","max_retry_attempts","http_retry_attempts"];
 const configPath=)"
@@ -500,6 +500,9 @@ const initialTargets=new Set()"
 const targetChecks=[...document.querySelectorAll("[data-target-option]")];
 const statusBox=document.getElementById("status");
 const applyButton=document.getElementById("apply");
+const iniBox=document.getElementById("ini");
+const downloadLink=document.getElementById("download");
+let downloadUrl="";
 function targetValue(el){return el.dataset.targetOption||el.value;}
 targetChecks.forEach(el=>el.checked=initialTargets.has(targetValue(el)));
 if(!targetChecks.some(el=>el.checked)&&targetChecks.length)targetChecks[0].checked=true;
@@ -508,9 +511,9 @@ function selectedTargets(){return targetChecks.filter(el=>el.checked).map(target
 function isHotkeyTextValid(text){const tokens=(text||"").split("+").map(part=>part.trim()).filter(Boolean); if(tokens.length<2)return false; let modifiers=0; let keys=0; const keyNames=new Set(["backspace","delete","del","down","end","enter","esc","escape","home","insert","ins","left","pagedown","pageup","pgdn","pgup","pause","printscreen","prtsc","right","space","tab","up"]); for(const raw of tokens){const token=raw.toLowerCase(); if(token==="ctrl"||token==="control"||token==="alt"||token==="shift"||token==="win"||token==="windows"||token==="super"||token==="meta"){modifiers++; continue;} if(/^[a-z0-9]$/.test(token)||/^f([1-9]|1[0-9]|2[0-4])$/.test(token)||keyNames.has(token)){keys++; continue;} return false;} return modifiers>0&&keys===1;}
 function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个上传后端"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要 Data Source ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian Vault 不能为空"); return problems;}
 function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后将上传到："+selected.join("、")); applyButton.disabled=problems.length>0;}
-function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; document.getElementById("ini").value=text; document.getElementById("download").href=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); updateStatus(); updateObsidianLocation();}
+function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; iniBox.value=text; if(downloadUrl)URL.revokeObjectURL(downloadUrl); downloadUrl=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); downloadLink.href=downloadUrl; updateStatus(); updateObsidianLocation();}
 function protocolUrl(action){return "notion-clipboard-win:/"+action+"/?path="+encodeURIComponent(configPath);}
-function protocolUrlWithOutput(action){return protocolUrl(action)+"&content="+encodeURIComponent(document.getElementById("ini").value);}
+function protocolUrlWithOutput(action){return protocolUrl(action)+"&content="+encodeURIComponent(iniBox.value);}
 function syncTargets(){const selected=selectedTargets(); target.value=selected.join(","); build();}
 const CUSTOM_PICKER_VALUE="__custom__";
 const obsidianVaultInput=document.querySelector('[data-key="obsidian_vault_dir"]');
@@ -528,11 +531,11 @@ targetChecks.forEach(el=>el.addEventListener("change",syncTargets));
 document.querySelectorAll("[data-key]").forEach(el=>{el.addEventListener("input",build);el.addEventListener("change",build);});
 document.querySelectorAll("[data-choice-target]").forEach(select=>select.addEventListener("change",()=>syncChoice(select)));
 document.querySelectorAll("[data-custom-key]").forEach(custom=>custom.addEventListener("input",()=>{const key=custom.dataset.customKey; const select=document.querySelector(`[data-choice-target="${key}"]`); const hidden=document.querySelector(`[data-key="${key}"]`); if(select&&select.value===CUSTOM_PICKER_VALUE&&hidden){hidden.value=custom.value.trim(); if(key==="obsidian_vault_dir")refreshObsidianFolders(); build();}}));
-applyButton.addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送配置给托盘应用，应用会校验、写入并重启。"; location.href="notion-clipboard-win:/apply-config/?path="+encodeURIComponent(configPath)+"&content="+encodeURIComponent(document.getElementById("ini").value);});
+applyButton.addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送配置给托盘应用，应用会校验、写入并重启。"; location.href="notion-clipboard-win:/apply-config/?path="+encodeURIComponent(configPath)+"&content="+encodeURIComponent(iniBox.value);});
 document.getElementById("testUpload").addEventListener("click",()=>{build(); const problems=validateConfig(); if(problems.length){updateStatus(); return;} statusBox.className="status ok"; statusBox.textContent="已发送测试上传请求，结果会写入并打开上传中心。"; location.href=protocolUrlWithOutput("test-upload");});
 document.getElementById("openUploadCenter").addEventListener("click",()=>{location.href=protocolUrl("open-upload-center");});
 document.getElementById("refreshObs").addEventListener("click",()=>{location.href=protocolUrl("open-config-page"); setTimeout(()=>location.reload(),1200);});
-document.getElementById("copy").addEventListener("click",async()=>{build(); await navigator.clipboard.writeText(document.getElementById("ini").value);});
+document.getElementById("copy").addEventListener("click",async()=>{build(); await navigator.clipboard.writeText(iniBox.value);});
 const hotkeyInput=document.getElementById("hotkeyInput");
 const hotkeyHelp=document.getElementById("hotkeyHelp");
 const recordHotkeyButton=document.getElementById("recordHotkey");
@@ -626,7 +629,10 @@ int RunConfigPageSelfTest()
                                         "joinObsidianPath(vault,folder)", "updateObsidianLocation()",
                                         "refreshObsidianFolders()", "重新扫描 Obsidian",
                                         "protocolUrl(\"open-config-page\")", "targetValue(el)", "syncTargets()",
-                                         "id=\"testUpload\"", "测试上传",
+                                         "保存配置", "高级：查看或导出 ini", "这里包含 token，仅用于手动备份或调试。",
+                                         "id=\"ini\" readonly spellcheck=\"false\"", "URL.revokeObjectURL(downloadUrl)",
+                                         "id=\"copy\"", "复制配置",
+                                         "id=\"download\"", "下载 ini", "id=\"testUpload\"", "测试上传",
                                          "protocolUrlWithOutput(\"test-upload\")",
                                          "已发送测试上传请求，结果会写入并打开上传中心。",
                                          "id=\"openUploadCenter\"", "上传中心",
@@ -653,7 +659,8 @@ int RunConfigPageSelfTest()
                                         "自动监听剪贴板", "debounce_ms", "id=\"previewObsidian\"", "id=\"obsidianPreview\"",
                                         "预览 Obsidian Markdown", "preview-obsidian-clipboard",
                                         "upload_initial_clipboard", "启动后上传当前剪贴板",
-                                        "id=\"validateOutputConfig\"", "查看配置诊断", "id=\"openConfigDiagnostics\""})
+                                        "id=\"validateOutputConfig\"", "查看配置诊断", "id=\"openConfigDiagnostics\"",
+                                        "输出 ini", "页面会输出包含 token 的完整配置"})
             {
                 if (html.find(needle) != std::string::npos)
                 {
