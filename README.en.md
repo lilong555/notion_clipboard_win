@@ -38,7 +38,7 @@ If you do not see the tray icon, click the small up arrow near the Windows clock
 
 The configuration page is local to your computer. It is used to generate and save the local ini configuration. Except for the one post-install launch, the app does not open this page automatically.
 
-### 3. Choose Upload Targets
+### 3. Choose Save Locations
 
 You can choose one target or both:
 

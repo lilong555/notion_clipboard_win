@@ -431,7 +431,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
 </head>
 <body>
 <header><div class="bar"><div><h1>Notion Clipboard Win 配置</h1><div class="path">配置文件：)"
-         << HtmlEscape(WideToUtf8(config_path.wstring())) << R"(</div></div><div class="target"><strong>上传后端</strong><input data-key="upload_target" id="target" type="hidden"><div class="target-list" id="targetList">
+         << HtmlEscape(WideToUtf8(config_path.wstring())) << R"(</div></div><div class="target"><strong>保存到</strong><input data-key="upload_target" id="target" type="hidden"><div class="target-list" id="targetList">
 <label><input type="checkbox" value="notion" data-target-option="notion">Notion</label><label><input type="checkbox" value="obsidian" data-target-option="obsidian">Obsidian</label>
 </div></div></div></header>
 <main class="wrap"><div>
@@ -462,7 +462,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
     html << "<div class=\"wide location\" id=\"obsidianLocation\"></div>\n";
     AddSectionEnd(&html);
 
-    html << "<section><h2>未来支持</h2><p>Webhook、语雀和飞书文档暂不作为当前稳定上传后端，后续会在 Notion 与 Obsidian 体验稳定后继续打磨。</p></section>\n";
+    html << "<section><h2>未来支持</h2><p>Webhook、语雀和飞书文档暂不作为当前稳定保存位置，后续会在 Notion 与 Obsidian 体验稳定后继续打磨。</p></section>\n";
 
     AddSectionStart(&html, "应用行为", "常用开关；高级运行参数保持默认即可。");
     AddHotkeyInput(&html, config.hotkey);
@@ -513,7 +513,7 @@ if(!targetChecks.some(el=>el.checked)&&targetChecks.length)targetChecks[0].check
 function val(key){const el=document.querySelector(`[data-key="${key}"]`); if(!el)return ""; return el.type==="checkbox"?(el.checked?"true":"false"):el.value.trim();}
 function selectedTargets(){return targetChecks.filter(el=>el.checked).map(targetValue);}
 function isHotkeyTextValid(text){const tokens=(text||"").split("+").map(part=>part.trim()).filter(Boolean); if(tokens.length<2)return false; let modifiers=0; let keys=0; const keyNames=new Set(["backspace","delete","del","down","end","enter","esc","escape","home","insert","ins","left","pagedown","pageup","pgdn","pgup","pause","printscreen","prtsc","right","space","tab","up"]); for(const raw of tokens){const token=raw.toLowerCase(); if(token==="ctrl"||token==="control"||token==="alt"||token==="shift"||token==="win"||token==="windows"||token==="super"||token==="meta"){modifiers++; continue;} if(/^[a-z0-9]$/.test(token)||/^f([1-9]|1[0-9]|2[0-4])$/.test(token)||keyNames.has(token)){keys++; continue;} return false;} return modifiers>0&&keys===1;}
-function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个上传后端"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要 Data Source ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian Vault 不能为空"); return problems;}
+function validateConfig(){const selected=selectedTargets(); const problems=[]; if(!selected.length)problems.push("至少选择一个保存位置"); if(!isHotkeyTextValid(val("hotkey")))problems.push("全局热键格式无效，请重新录制类似 Ctrl+Shift+B 的组合键"); if(selected.includes("notion")){if(!val("notion_token"))problems.push("Notion Token 不能为空"); if(!val("data_source_id")&&!val("database_id"))problems.push("Notion 需要 Data Source ID 或 Database ID");} if(selected.includes("obsidian")&&!val("obsidian_vault_dir"))problems.push("Obsidian Vault 不能为空"); return problems;}
 function updateStatus(){const selected=selectedTargets(); const problems=validateConfig(); statusBox.className="status "+(problems.length?"error":"ok"); statusBox.textContent=problems.length?("需要处理："+problems.join("；")):("配置完整。保存后将上传到："+selected.join("、")); applyButton.disabled=problems.length>0;}
 function build(){const text=order.map(k=>`${k}=${val(k)}`).join("\n")+"\n"; iniBox.value=text; if(downloadUrl)URL.revokeObjectURL(downloadUrl); downloadUrl=URL.createObjectURL(new Blob([text],{type:"text/plain;charset=utf-8"})); downloadLink.href=downloadUrl; updateStatus(); updateObsidianLocation();}
 function protocolUrl(action){return "notion-clipboard-win:/"+action+"/?path="+encodeURIComponent(configPath);}
@@ -622,7 +622,7 @@ int RunConfigPageSelfTest()
             const std::string html = ReadWholeFile(page);
             for (const char *needle : {"notion_secret", "value=\"obsidian\" data-target-option=\"obsidian\"",
                                        "value=\"notion\" data-target-option=\"notion\"", "未来支持", "Webhook、语雀和飞书文档",
-                                       "notion,obsidian",
+                                       "notion,obsidian", "<strong>保存到</strong>", "至少选择一个保存位置",
                                        "高级：Notion 属性", "标题属性通常会自动识别",
                                        "data-key=\"database_id\"", "data-key=\"title_property_name\"",
                                        "data-key=\"content_property_name\"", "data-key=\"created_time_property_name\"",
@@ -673,7 +673,7 @@ int RunConfigPageSelfTest()
                                         "预览 Obsidian Markdown", "preview-obsidian-clipboard",
                                         "upload_initial_clipboard", "启动后上传当前剪贴板",
                                         "id=\"validateOutputConfig\"", "查看配置诊断", "id=\"openConfigDiagnostics\"",
-                                        "输出 ini", "页面会输出包含 token 的完整配置"})
+                                        "输出 ini", "页面会输出包含 token 的完整配置", "上传后端"})
             {
                 if (html.find(needle) != std::string::npos)
                 {
