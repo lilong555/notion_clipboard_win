@@ -91,6 +91,45 @@ bool ExperimentalUploadTargetsEnabled()
     return enabled == "1" || enabled == "true" || enabled == "yes" || enabled == "on";
 }
 
+void ValidateObsidianFolderOrThrow(const std::string &folder)
+{
+    const std::string trimmed = Trim(folder);
+    if (trimmed.empty())
+    {
+        return;
+    }
+    if (trimmed.front() == '/' || trimmed.front() == '\\')
+    {
+        throw std::runtime_error("obsidian_folder 必须是仓库内相对目录，不能以 / 或 \\ 开头");
+    }
+
+    std::string normalized = trimmed;
+    std::replace(normalized.begin(), normalized.end(), '\\', '/');
+    std::size_t begin = 0;
+    while (begin <= normalized.size())
+    {
+        const std::size_t slash = normalized.find('/', begin);
+        const std::string segment =
+            Trim(normalized.substr(begin, slash == std::string::npos ? std::string::npos : slash - begin));
+        if (!segment.empty() && segment != ".")
+        {
+            if (segment == "..")
+            {
+                throw std::runtime_error("obsidian_folder 不能包含 ..");
+            }
+            if (segment.find(':') != std::string::npos)
+            {
+                throw std::runtime_error("obsidian_folder 不能包含盘符或冒号");
+            }
+        }
+        if (slash == std::string::npos)
+        {
+            break;
+        }
+        begin = slash + 1;
+    }
+}
+
 void ApplyConfigValue(AppConfig *config, const std::string &key, const std::string &value)
 {
     const std::string normalized = ToLowerAscii(Trim(key));
@@ -649,6 +688,32 @@ int RunConfigSelfTest()
             fail("hidden markdown_file target was not rejected by default");
         }
 
+        const fs::path obsidian_vault = UniqueTempDirectoryPath(L"notion-clipboard-win-config-test-vault");
+        std::error_code ignored;
+        fs::remove_all(obsidian_vault, ignored);
+        fs::create_directories(obsidian_vault);
+        AppConfig invalid_obsidian_folder_config;
+        invalid_obsidian_folder_config.upload_target = "obsidian";
+        invalid_obsidian_folder_config.obsidian_vault_dir = obsidian_vault;
+        for (const char *folder : {"../outside", "/absolute"})
+        {
+            invalid_obsidian_folder_config.obsidian_folder = folder;
+            bool rejected_folder = false;
+            try
+            {
+                ValidateConfigOrThrow(invalid_obsidian_folder_config);
+            }
+            catch (const std::exception &ex)
+            {
+                rejected_folder = std::string(ex.what()).find("obsidian_folder") != std::string::npos;
+            }
+            if (!rejected_folder)
+            {
+                fail(std::string("invalid obsidian_folder was not rejected: ") + folder);
+            }
+        }
+        fs::remove_all(obsidian_vault, ignored);
+
         SetEnvironmentVariableW(L"NCW_ENABLE_EXPERIMENTAL_TARGETS", L"true");
         try
         {
@@ -711,6 +776,7 @@ void ValidateSingleUploadTargetOrThrow(const AppConfig &config)
         {
             throw std::runtime_error("obsidian_vault_dir 不存在或不是目录");
         }
+        ValidateObsidianFolderOrThrow(config.obsidian_folder);
         return;
     }
     if (config.upload_target == "webhook")

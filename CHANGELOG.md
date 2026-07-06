@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Reject unsafe Obsidian subdirectory values during configuration validation instead of waiting until file write time.
+
 ## 0.2.7 - 2026-07-06
 
 - Show an explicit Obsidian vault chooser placeholder when no vault has been configured yet.
