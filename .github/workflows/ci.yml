@@ -25,7 +25,7 @@ jobs:
         run: cmake --build build-console --config Release
 
       - name: Run app self-tests
-        run: .\build-console\Release\notion_clipboard_win.exe --self-test
+        run: ctest --test-dir build-console -C Release --output-on-failure
 
       - name: Check installer release guards
         shell: pwsh

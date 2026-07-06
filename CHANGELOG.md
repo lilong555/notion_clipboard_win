@@ -4,6 +4,7 @@
 
 - Add a Windows CI workflow for console builds, app self-tests, and installer guard checks.
 - Use the Node 24-compatible checkout action in CI.
+- Register the app self-test with CTest and run it through CTest in CI and contributor docs.
 
 ## 0.2.5 - 2026-07-06
 

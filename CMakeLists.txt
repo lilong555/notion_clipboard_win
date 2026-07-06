@@ -17,6 +17,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(NOTION_CLIPBOARD_WIN_GUI "构建为无控制台窗口的后台程序" OFF)
 
+include(CTest)
+
 set(APP_ICON_PATH_RC "${CMAKE_CURRENT_SOURCE_DIR}/assets/app.ico")
 set(RESOURCE_HEADER_PATH_RC "${CMAKE_CURRENT_SOURCE_DIR}/src/resource.h")
 set(NCW_VERSION_MAJOR "${PROJECT_VERSION_MAJOR}")
@@ -72,4 +74,9 @@ else()
     if(MINGW)
         target_link_options(notion_clipboard_win PRIVATE -municode)
     endif()
+endif()
+
+if(BUILD_TESTING AND NOT NOTION_CLIPBOARD_WIN_GUI)
+    add_test(NAME self_test COMMAND notion_clipboard_win --self-test)
+    set_tests_properties(self_test PROPERTIES TIMEOUT 120)
 endif()

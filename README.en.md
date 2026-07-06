@@ -199,10 +199,10 @@ Run self-tests:
 ```powershell
 cmake -S . -B build-console -DNOTION_CLIPBOARD_WIN_GUI=OFF
 cmake --build build-console --config Release
-.\build-console\Release\notion_clipboard_win.exe --self-test
+ctest --test-dir build-console -C Release --output-on-failure
 ```
 
-CI runs the console build, `--self-test`, release-guard check, and installer-guard regression tests on Windows. Before submitting changes, run at least the self-test above.
+CI runs the console build, CTest self-test, release-guard check, and installer-guard regression tests on Windows. Before submitting changes, run at least the self-test above.
 
 Check release guards before packaging:
 
