@@ -413,6 +413,15 @@ CliOptions ParseCli(int argc, wchar_t **argv)
             options.dry_run = true;
             options.dry_run_file_path = fs::path(argv[++i]);
         }
+        else if (arg == L"--dry-run-obsidian-file")
+        {
+            if (i + 2 >= argc)
+            {
+                throw std::runtime_error("--dry-run-obsidian-file 缺少输入或输出路径");
+            }
+            options.dry_run_obsidian_input_path = fs::path(argv[++i]);
+            options.dry_run_obsidian_output_path = fs::path(argv[++i]);
+        }
         else if (arg == L"--self-test")
         {
             options.self_test = true;
@@ -555,6 +564,7 @@ void PrintHelp()
               << "  notion_clipboard_win.exe --dry-run --once             读取剪贴板但不上传\n\n"
               << "  notion_clipboard_win.exe --self-test                  运行本地转换回归测试\n\n"
               << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不上传\n\n"
+              << "  notion_clipboard_win.exe --dry-run-obsidian-file in out 生成 Obsidian Markdown 预览\n\n"
               << "  notion_clipboard_win.exe --test-upload-url URL        使用配置页内容测试上传一次\n\n"
               << "  notion_clipboard_win.exe --open-upload-center-url URL 打开上传中心\n\n"
               << "  notion_clipboard_win.exe --retry-failed-job-url URL   重试单个 failed 任务\n\n"

@@ -207,3 +207,9 @@ Dry-run conversion:
 ```powershell
 .\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt
 ```
+
+Generate an Obsidian Markdown preview file:
+
+```powershell
+.\build-console\Release\notion_clipboard_win.exe --dry-run-obsidian-file .\test\bf.txt .\test\bf.obsidian.md
+```

@@ -64,6 +64,7 @@ using ncw::LoadConfig;
 using ncw::ModuleDirectory;
 using ncw::NowUnixMs;
 using ncw::NormalizeLineEndings;
+using ncw::NormalizeMarkdownForObsidian;
 using ncw::ParseHotkeyOrThrow;
 using ncw::ParseCli;
 using ncw::ParseUploadTargets;
@@ -2566,6 +2567,30 @@ int RetryFailedJobUrlAndOpenCenter(const std::string &url)
     return 0;
 }
 
+int RunObsidianDryRunFile(const std::filesystem::path &input_path, const std::filesystem::path &output_path)
+{
+    const std::string input = Trim(NormalizeLineEndings(ReadWholeFile(input_path)));
+    if (input.empty())
+    {
+        throw std::runtime_error("输入文件没有可转换的文本");
+    }
+
+    std::string output = NormalizeMarkdownForObsidian(input);
+    if (output.empty())
+    {
+        throw std::runtime_error("Obsidian 预览内容为空");
+    }
+    if (output.back() != '\n')
+    {
+        output.push_back('\n');
+    }
+
+    AtomicWriteFile(output_path, output);
+    std::cout << "obsidian dry-run: title=" << BuildTitleFromContent(input) << "，bytes=" << output.size()
+              << "，output=" << WideToUtf8(output_path.wstring()) << "\n";
+    return 0;
+}
+
 int RunMainSelfTest()
 {
     bool ok = true;
@@ -2650,6 +2675,18 @@ int RunMainSelfTest()
             if (parsed.retry_failed_job_url.empty())
             {
                 fail("retry-failed-job protocol URL was not parsed");
+            }
+        }
+        {
+            wchar_t exe[] = L"notion_clipboard_win.exe";
+            wchar_t flag[] = L"--dry-run-obsidian-file";
+            wchar_t input[] = L"C:\\Temp\\in.md";
+            wchar_t output[] = L"C:\\Temp\\out.md";
+            wchar_t *argv[] = {exe, flag, input, output};
+            const CliOptions parsed = ParseCli(4, argv);
+            if (parsed.dry_run_obsidian_input_path.empty() || parsed.dry_run_obsidian_output_path.empty())
+            {
+                fail("dry-run-obsidian-file paths were not parsed");
             }
         }
 
@@ -2928,6 +2965,10 @@ int AppMain(int argc, wchar_t **argv)
     if (!cli.dry_run_file_path.empty())
     {
         return RunDryRunText(ReadWholeFile(cli.dry_run_file_path));
+    }
+    if (!cli.dry_run_obsidian_input_path.empty())
+    {
+        return RunObsidianDryRunFile(cli.dry_run_obsidian_input_path, cli.dry_run_obsidian_output_path);
     }
 
     AppConfig config = LoadConfig(cli.config_path);
