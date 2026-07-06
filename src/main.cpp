@@ -2527,6 +2527,33 @@ int RunMainSelfTest()
         }
         fs::remove(protocol_temp_path, ignored);
 
+        const fs::path saved_protocol_vault = root / L"saved-protocol-vault";
+        const fs::path unsaved_protocol_vault = root / L"unsaved-protocol-vault";
+        fs::create_directories(saved_protocol_vault / L"oldOnly");
+        fs::create_directories(unsaved_protocol_vault / L"newOnly");
+        const std::string saved_protocol_config =
+            "upload_target=obsidian\nobsidian_vault_dir=" + WideToUtf8(saved_protocol_vault.wstring()) +
+            "\nobsidian_folder=oldOnly\nstate_dir=" + WideToUtf8((root / L"protocol-page-state").wstring()) + "\n";
+        AtomicWriteFile(protocol_config_path, saved_protocol_config);
+
+        const std::string open_config_page_url =
+            "notion-clipboard-win:/open-config-page/?path=" + WideToUtf8(protocol_config_path.wstring()) +
+            "&content=upload_target%3Dobsidian%0Aobsidian_vault_dir%3D" +
+            WideToUtf8(unsaved_protocol_vault.wstring()) + "%0Aobsidian_folder%3DnewOnly%0Astate_dir%3D" +
+            WideToUtf8((root / L"protocol-page-state").wstring()) + "%0A";
+        const AppConfig open_page_config =
+            LoadConfigFromProtocolUrlOrContent(open_config_page_url, protocol_config_path, &protocol_temp_path);
+        const fs::path open_page = WriteConfigPage(open_page_config, protocol_config_path);
+        const std::string open_page_html = ReadWholeFile(open_page);
+        if (open_page_config.obsidian_vault_dir != unsaved_protocol_vault ||
+            open_page_html.find("value=\"newOnly\"") == std::string::npos ||
+            open_page_html.find("value=\"oldOnly\"") != std::string::npos ||
+            ReadWholeFile(protocol_config_path) != saved_protocol_config)
+        {
+            fail("open-config-page protocol content did not rescan unsaved obsidian values");
+        }
+        fs::remove(protocol_temp_path, ignored);
+
         const std::string invalid_hotkey_content =
             "upload_target=obsidian\nobsidian_vault_dir=" + WideToUtf8(protocol_vault.wstring()) +
             "\nhotkey=Ctrl+DefinitelyNotAKey\n";
