@@ -14,6 +14,7 @@
 - Add a backend regression test for Obsidian rescans from unsaved configuration-page values.
 - Document how Obsidian rescans work for newly created vaults and folders.
 - Skip save-result notification message work when tray notifications are disabled.
+- Gate the hidden local Markdown debug target behind `NCW_ENABLE_EXPERIMENTAL_TARGETS`.
 - Make self-test temporary directories unique across parallel test processes.
 
 ## 0.2.5 - 2026-07-06

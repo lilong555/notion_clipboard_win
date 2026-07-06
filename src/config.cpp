@@ -82,7 +82,7 @@ std::string SupportedUploadTargetsText()
 
 bool IsExperimentalUploadTarget(const std::string &target)
 {
-    return target == "webhook" || target == "yuque" || target == "feishu_doc";
+    return target == "markdown_file" || target == "webhook" || target == "yuque" || target == "feishu_doc";
 }
 
 bool ExperimentalUploadTargetsEnabled()
@@ -579,8 +579,9 @@ int RunConfigSelfTest()
             }
         }
         for (const char *needle : {"--validate-config", "--test-upload-url", "--open-upload-center-url",
-                                   "--retry-failed-job-url", "--retry-failed-uploads-url", "webhook", "yuque",
-                                   "feishu", "语雀", "飞书", "上传", "--dry-run-obsidian-file", "调试生成"})
+                                   "--retry-failed-job-url", "--retry-failed-uploads-url", "markdown_file",
+                                   "Markdown 文件", "webhook", "yuque", "feishu", "语雀", "飞书", "上传",
+                                   "--dry-run-obsidian-file", "调试生成"})
         {
             if (help.find(needle) != std::string::npos)
             {
@@ -617,6 +618,8 @@ int RunConfigSelfTest()
         AppConfig experimental_config;
         experimental_config.upload_target = "webhook";
         experimental_config.webhook_url = "https://example.com/hook";
+        AppConfig markdown_file_config;
+        markdown_file_config.upload_target = "markdown_file";
         const std::wstring old_experimental_env = GetEnvWide(L"NCW_ENABLE_EXPERIMENTAL_TARGETS");
         SetEnvironmentVariableW(L"NCW_ENABLE_EXPERIMENTAL_TARGETS", nullptr);
         bool rejected_experimental = false;
@@ -632,11 +635,25 @@ int RunConfigSelfTest()
         {
             fail("experimental upload targets were not rejected by default");
         }
+        bool rejected_markdown_file = false;
+        try
+        {
+            ValidateConfigOrThrow(markdown_file_config);
+        }
+        catch (const std::exception &ex)
+        {
+            rejected_markdown_file = std::string(ex.what()).find("实验目标") != std::string::npos;
+        }
+        if (!rejected_markdown_file)
+        {
+            fail("hidden markdown_file target was not rejected by default");
+        }
 
         SetEnvironmentVariableW(L"NCW_ENABLE_EXPERIMENTAL_TARGETS", L"true");
         try
         {
             ValidateConfigOrThrow(experimental_config);
+            ValidateConfigOrThrow(markdown_file_config);
         }
         catch (const std::exception &ex)
         {
