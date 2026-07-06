@@ -8,6 +8,7 @@
 - Keep Obsidian Markdown debug output out of the user README while documenting it for contributors.
 - Add a lightweight regression script for installer release-guard checks.
 - Fix release guard git probes so missing version tags are handled by exit code instead of stderr noise.
+- Keep the Obsidian Markdown debug command hidden from public `--help` output.
 
 ## 0.2.4 - 2026-07-06
 

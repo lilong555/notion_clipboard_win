@@ -518,7 +518,6 @@ std::string BuildHelpText()
          << "  notion_clipboard_win.exe --dry-run --once             读取剪贴板但不保存\n\n"
          << "  notion_clipboard_win.exe --self-test                  运行本地转换回归测试\n\n"
          << "  notion_clipboard_win.exe --dry-run-file path          读取文件并转换统计，不保存\n\n"
-         << "  notion_clipboard_win.exe --dry-run-obsidian-file in out 调试生成 Obsidian Markdown 文件\n\n"
          << "  notion_clipboard_win.exe --open-config-page-on-start  启动后打开配置页一次\n\n"
          << "默认热键:\n"
          << "  Ctrl+Shift+B\n\n"
@@ -548,7 +547,7 @@ int RunConfigSelfTest()
     {
         const std::string help = BuildHelpText();
         for (const char *needle : {"Notion Clipboard Win", "--once", "--dry-run-file",
-                                   "--dry-run-obsidian-file", "--open-config-page-on-start",
+                                   "--open-config-page-on-start",
                                    "upload_target=notion 或 upload_target=notion,obsidian",
                                    "支持: notion、obsidian"})
         {
@@ -559,7 +558,7 @@ int RunConfigSelfTest()
         }
         for (const char *needle : {"--validate-config", "--test-upload-url", "--open-upload-center-url",
                                    "--retry-failed-job-url", "--retry-failed-uploads-url", "webhook", "yuque",
-                                   "feishu", "语雀", "飞书", "上传"})
+                                   "feishu", "语雀", "飞书", "上传", "--dry-run-obsidian-file", "调试生成"})
         {
             if (help.find(needle) != std::string::npos)
             {
