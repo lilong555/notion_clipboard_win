@@ -212,7 +212,7 @@ cmake --build build-console --config Release
 ctest --test-dir build-console -C Release --output-on-failure
 ```
 
-CI 会在 Windows 上执行 console 构建、CTest 自测、发版门禁快检和安装包脚本回归。提交前建议至少跑上面的自测。
+CTest 会同时运行内置自测和 `test/bf.txt` 长文本转换回归。CI 还会执行发版门禁快检和安装包脚本回归；提交前建议至少跑上面的 CTest。
 
 发版前检查：
 

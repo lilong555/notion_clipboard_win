@@ -212,7 +212,7 @@ cmake --build build-console --config Release
 ctest --test-dir build-console -C Release --output-on-failure
 ```
 
-CI runs the console build, CTest self-test, release-guard check, and installer-guard regression tests on Windows. Before submitting changes, run at least the self-test above.
+CTest runs both the built-in self-test and the long-form `test/bf.txt` conversion regression. CI also runs release-guard and installer-guard checks; before submitting changes, run at least the CTest command above.
 
 Check release guards before packaging:
 

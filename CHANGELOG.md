@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Run the real `test/bf.txt` conversion fixture through CTest and CI in addition to the built-in self-test.
+
 ## 0.2.8 - 2026-07-14
 
 - Reject unsafe Obsidian subdirectory values during configuration validation instead of waiting until file write time.
