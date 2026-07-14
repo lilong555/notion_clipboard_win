@@ -50,6 +50,42 @@ std::string HtmlEscape(const std::string &text)
     return output;
 }
 
+std::string EscapeJsonForInlineScript(const std::string &text)
+{
+    const std::string escaped = EscapeJson(text);
+    std::string output;
+    output.reserve(escaped.size());
+    for (std::size_t i = 0; i < escaped.size(); ++i)
+    {
+        const unsigned char ch = static_cast<unsigned char>(escaped[i]);
+        if (ch == 0xe2 && i + 2 < escaped.size() &&
+            static_cast<unsigned char>(escaped[i + 1]) == 0x80 &&
+            (static_cast<unsigned char>(escaped[i + 2]) == 0xa8 ||
+             static_cast<unsigned char>(escaped[i + 2]) == 0xa9))
+        {
+            output += static_cast<unsigned char>(escaped[i + 2]) == 0xa8 ? "\\u2028" : "\\u2029";
+            i += 2;
+            continue;
+        }
+        switch (ch)
+        {
+        case '<':
+            output += "\\u003c";
+            break;
+        case '>':
+            output += "\\u003e";
+            break;
+        case '&':
+            output += "\\u0026";
+            break;
+        default:
+            output.push_back(static_cast<char>(ch));
+            break;
+        }
+    }
+    return output;
+}
+
 std::string PathValue(const std::filesystem::path &path)
 {
     return path.empty() ? "" : WideToUtf8(path.wstring());
@@ -389,8 +425,9 @@ std::string BuildObsidianFolderGroupsJson(const std::vector<ObsidianFolderGroup>
             json << ",";
         }
         first_group = false;
-        json << "{\"key\":\"" << EscapeJson(group.vault_key) << "\",\"path\":\"" << EscapeJson(group.vault_path)
-             << "\",\"label\":\"" << EscapeJson(group.vault_label) << "\",\"folders\":[";
+        json << "{\"key\":\"" << EscapeJsonForInlineScript(group.vault_key) << "\",\"path\":\""
+             << EscapeJsonForInlineScript(group.vault_path) << "\",\"label\":\""
+             << EscapeJsonForInlineScript(group.vault_label) << "\",\"folders\":[";
         bool first_folder = true;
         for (const auto &folder : group.folders)
         {
@@ -399,8 +436,8 @@ std::string BuildObsidianFolderGroupsJson(const std::vector<ObsidianFolderGroup>
                 json << ",";
             }
             first_folder = false;
-            json << "{\"value\":\"" << EscapeJson(folder.first) << "\",\"label\":\"" << EscapeJson(folder.second)
-                 << "\"}";
+            json << "{\"value\":\"" << EscapeJsonForInlineScript(folder.first) << "\",\"label\":\""
+                 << EscapeJsonForInlineScript(folder.second) << "\"}";
         }
         json << "]}";
     }
@@ -506,7 +543,7 @@ textarea{min-height:300px;resize:vertical;font-family:Consolas,monospace;font-si
 <script>
 const order=["upload_target","notion_token","data_source_id","database_id","title_property_name","content_property_name","content_property_max_chars","created_time_property_name","obsidian_vault_dir","obsidian_folder","obsidian_tags","state_dir","hotkey","enable_hotkey","tray_notifications","start_with_windows","duplicate_suppression_ms","max_clipboard_bytes","min_request_interval_ms","append_batch_size","max_retry_attempts","http_retry_attempts"];
 const configPath=)"
-         << '"' << EscapeJson(WideToUtf8(config_path.wstring())) << '"' << R"(;
+         << '"' << EscapeJsonForInlineScript(WideToUtf8(config_path.wstring())) << '"' << R"(;
 const obsidianFolderGroups=)"
          << BuildObsidianFolderGroupsJson(obsidian_folder_groups) << R"(;
 function normalizePathKey(path){return (path||"").trim().replace(/\//g,"\\").replace(/[\\]+$/,"").toLowerCase();}
@@ -515,7 +552,7 @@ obsidianFolderGroups.forEach(group=>{if(group.path)obsidianFolderGroupMap.set(gr
 function findObsidianFolderGroup(vault){return obsidianFolderGroupMap.get(vault)||obsidianFolderGroupMap.get(normalizePathKey(vault))||null;}
 const target=document.getElementById("target");
 const initialTargets=new Set()"
-         << '"' << EscapeJson(config.upload_target) << '"' << R"(.split(/[\s,;|]+/).filter(Boolean));
+         << '"' << EscapeJsonForInlineScript(config.upload_target) << '"' << R"(.split(/[\s,;|]+/).filter(Boolean));
 const targetChecks=[...document.querySelectorAll("[data-target-option]")];
 const statusBox=document.getElementById("status");
 const applyButton=document.getElementById("apply");
@@ -633,13 +670,15 @@ int RunConfigPageSelfTest()
 
         AppConfig malformed_target_config = config;
         malformed_target_config.state_dir = root / L"malformed-target-state";
-        malformed_target_config.upload_target = "notion\";window.injected=true;//";
+        malformed_target_config.upload_target = "notion\";</script><script>window.injected=true</script>//";
         const std::string malformed_target_html =
             ReadWholeFile(WriteConfigPage(malformed_target_config, root / L"malformed-target.ini"));
-        if (malformed_target_html.find("const initialTargets=new Set(\"notion\\\";window.injected=true;//\".split") ==
+        if (malformed_target_html.find(
+                "const initialTargets=new Set(\"notion\\\";\\u003c/script\\u003e\\u003cscript\\u003e"
+                "window.injected=true\\u003c/script\\u003e//\".split") ==
                 std::string::npos ||
-            malformed_target_html.find("const initialTargets=new Set(\"notion\";window.injected=true") !=
-                std::string::npos)
+            malformed_target_html.find("</script><script>window.injected") != std::string::npos ||
+            malformed_target_html.find("&quot;") != std::string::npos)
         {
             fail("malformed upload_target was not escaped for the configuration page script");
         }

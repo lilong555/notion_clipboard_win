@@ -6,6 +6,7 @@
 - Show unsafe Obsidian subdirectory errors directly on the configuration page before applying or testing.
 - Disable both configuration apply and test-save actions while required settings are invalid.
 - Keep the configuration recovery page script valid when `upload_target` contains malformed quotes.
+- Escape inline-script JSON data so malformed configuration text cannot terminate the local page script early.
 
 ## 0.2.7 - 2026-07-06
 
