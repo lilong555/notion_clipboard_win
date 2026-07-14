@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+## 0.2.8 - 2026-07-14
+
 - Reject unsafe Obsidian subdirectory values during configuration validation instead of waiting until file write time.
 - Show unsafe Obsidian subdirectory errors directly on the configuration page before applying or testing.
 - Disable both configuration apply and test-save actions while required settings are invalid.
