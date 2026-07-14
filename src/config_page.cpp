@@ -515,7 +515,7 @@ obsidianFolderGroups.forEach(group=>{if(group.path)obsidianFolderGroupMap.set(gr
 function findObsidianFolderGroup(vault){return obsidianFolderGroupMap.get(vault)||obsidianFolderGroupMap.get(normalizePathKey(vault))||null;}
 const target=document.getElementById("target");
 const initialTargets=new Set()"
-         << '"' << HtmlEscape(config.upload_target) << '"' << R"(.split(/[\s,;|]+/).filter(Boolean));
+         << '"' << EscapeJson(config.upload_target) << '"' << R"(.split(/[\s,;|]+/).filter(Boolean));
 const targetChecks=[...document.querySelectorAll("[data-target-option]")];
 const statusBox=document.getElementById("status");
 const applyButton=document.getElementById("apply");
@@ -629,6 +629,19 @@ int RunConfigPageSelfTest()
             has_folder(folder_groups[1], "aaa"))
         {
             fail("obsidian folder options were not scoped by vault");
+        }
+
+        AppConfig malformed_target_config = config;
+        malformed_target_config.state_dir = root / L"malformed-target-state";
+        malformed_target_config.upload_target = "notion\";window.injected=true;//";
+        const std::string malformed_target_html =
+            ReadWholeFile(WriteConfigPage(malformed_target_config, root / L"malformed-target.ini"));
+        if (malformed_target_html.find("const initialTargets=new Set(\"notion\\\";window.injected=true;//\".split") ==
+                std::string::npos ||
+            malformed_target_html.find("const initialTargets=new Set(\"notion\";window.injected=true") !=
+                std::string::npos)
+        {
+            fail("malformed upload_target was not escaped for the configuration page script");
         }
 
         AppConfig empty_vault_config = config;

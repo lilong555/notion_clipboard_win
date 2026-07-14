@@ -5,6 +5,7 @@
 - Reject unsafe Obsidian subdirectory values during configuration validation instead of waiting until file write time.
 - Show unsafe Obsidian subdirectory errors directly on the configuration page before applying or testing.
 - Disable both configuration apply and test-save actions while required settings are invalid.
+- Keep the configuration recovery page script valid when `upload_target` contains malformed quotes.
 
 ## 0.2.7 - 2026-07-06
 
