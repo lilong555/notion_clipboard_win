@@ -85,5 +85,9 @@ if(BUILD_TESTING AND NOT NOTION_CLIPBOARD_WIN_GUI)
     add_test(NAME self_test COMMAND notion_clipboard_win --self-test)
     add_test(NAME bf_dry_run
         COMMAND notion_clipboard_win --dry-run-file "${CMAKE_CURRENT_SOURCE_DIR}/test/bf.txt")
-    set_tests_properties(self_test bf_dry_run PROPERTIES TIMEOUT 120)
+    add_test(NAME bf_obsidian_dry_run
+        COMMAND notion_clipboard_win --dry-run-obsidian-file
+            "${CMAKE_CURRENT_SOURCE_DIR}/test/bf.txt"
+            "${CMAKE_CURRENT_BINARY_DIR}/Testing/Temporary/bf.obsidian.md")
+    set_tests_properties(self_test bf_dry_run bf_obsidian_dry_run PROPERTIES TIMEOUT 120)
 endif()
