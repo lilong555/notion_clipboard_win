@@ -4,6 +4,7 @@
 
 - Run the real `test/bf.txt` conversion fixture through CTest and CI in addition to the built-in self-test.
 - Run the same real fixture through the Obsidian Markdown dry-run path in CTest and CI.
+- Verify the generated Obsidian fixture structure and guard against the removed source marker in CTest.
 
 ## 0.2.8 - 2026-07-14
 
