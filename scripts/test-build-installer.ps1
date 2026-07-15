@@ -9,6 +9,7 @@ $SourceScript = Join-Path $Root "scripts\build-installer.ps1"
 if (-not (Test-Path $SourceScript)) {
     throw "build-installer.ps1 was not found."
 }
+$SourceContent = Get-Content -Raw $SourceScript
 
 if (-not $PowerShellExe) {
     $CurrentProcess = Get-Process -Id $PID
@@ -154,6 +155,28 @@ function Initialize-GitRepo {
 
 New-Item -ItemType Directory -Force -Path $TempRoot | Out-Null
 try {
+    if ($SourceContent -notmatch 'Invoke-CheckedNative\s+-Command\s+\$CTestPath' -or
+        $SourceContent -notmatch '"--test-dir"\s*,\s*"build-console"' -or
+        $SourceContent -notmatch '"--output-on-failure"') {
+        throw "build-installer.ps1 must run the complete CTest suite before packaging."
+    }
+    Write-Host "[PASS] installer build runs CTest"
+
+    if ($SourceContent -match '--self-test') {
+        throw "build-installer.ps1 must not bypass CTest by running only --self-test."
+    }
+    Write-Host "[PASS] installer build does not bypass CTest"
+
+    $CheckedCMakeCalls = [regex]::Matches(
+        $SourceContent,
+        'Invoke-CheckedNative\s+-Command\s+\$CMakePath'
+    ).Count
+    if ($CheckedCMakeCalls -lt 4 -or
+        $SourceContent -notmatch 'Invoke-CheckedNative\s+-Command\s+\$IsccPath') {
+        throw "build-installer.ps1 must check native build and installer command exit codes."
+    }
+    Write-Host "[PASS] native build command failures are checked"
+
     $CleanFixture = New-Fixture -Name "clean" -Changelog $ReleasedChangelog
     Initialize-GitRepo $CleanFixture
     Assert-Success "check-only accepts released changelog" (Invoke-InstallerCheck $CleanFixture @("-CheckOnly"))

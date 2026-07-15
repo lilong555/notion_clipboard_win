@@ -204,7 +204,7 @@ cmake -S . -B build
 cmake --build build --config Release
 ```
 
-运行自测：
+运行完整测试：
 
 ```powershell
 cmake -S . -B build-console -DNOTION_CLIPBOARD_WIN_GUI=OFF
@@ -234,7 +234,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1
 ```
 
-脚本会运行自测、构建 GUI 版，并在 `dist/` 生成安装包和 `.sha256` 校验文件。需要本机已安装 Inno Setup。
+脚本会先构建控制台版并运行完整 CTest，全部通过后再构建 GUI 版，并在 `dist/` 生成安装包和 `.sha256` 校验文件。任何构建、测试或打包命令失败都会立即停止。需要本机已安装 Inno Setup。
 
 转换 dry run：
 

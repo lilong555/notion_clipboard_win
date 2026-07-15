@@ -204,7 +204,7 @@ cmake -S . -B build
 cmake --build build --config Release
 ```
 
-Run self-tests:
+Run the full test suite:
 
 ```powershell
 cmake -S . -B build-console -DNOTION_CLIPBOARD_WIN_GUI=OFF
@@ -234,7 +234,7 @@ Build the installer:
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1
 ```
 
-The script runs self-tests, builds the GUI app, and writes the installer plus `.sha256` file to `dist/`. Inno Setup must be installed locally.
+The script builds the console app and runs the full CTest suite before building the GUI app and writing the installer plus `.sha256` file to `dist/`. Any failed build, test, or packaging command stops the script immediately. Inno Setup must be installed locally.
 
 Dry-run conversion:
 

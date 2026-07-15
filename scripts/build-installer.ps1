@@ -30,6 +30,22 @@ function Invoke-NativeForOutput {
     }
 }
 
+function Invoke-CheckedNative {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Command,
+        [string[]]$Arguments = @(),
+        [Parameter(Mandatory = $true)]
+        [string]$Description
+    )
+
+    & $Command @Arguments
+    $ExitCode = $LASTEXITCODE
+    if ($ExitCode -ne 0) {
+        throw "$Description failed with exit code $ExitCode."
+    }
+}
+
 function Test-ReleaseGuards {
     if ($AppVersion -notmatch '^\d+\.\d+\.\d+$') {
         throw "VERSION must use x.y.z format. Current value: $AppVersion"
@@ -92,6 +108,11 @@ if (-not $CMakePath) {
     throw "cmake was not found. Install CMake or Visual Studio with C++ tools."
 }
 
+$CTestPath = Join-Path (Split-Path -Parent $CMakePath) "ctest.exe"
+if (-not (Test-Path -LiteralPath $CTestPath)) {
+    throw "ctest.exe was not found next to cmake: $CTestPath"
+}
+
 $IsccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
 $IsccPath = if ($IsccCommand) { $IsccCommand.Source } else { $null }
 if (-not $IsccPath) {
@@ -110,9 +131,15 @@ if (-not $IsccPath) {
 
 Push-Location $Root
 try {
-    & $CMakePath -S . -B build-console -DNOTION_CLIPBOARD_WIN_GUI=OFF
-    & $CMakePath --build build-console --config $Configuration
-    & ".\build-console\$Configuration\notion_clipboard_win.exe" --self-test
+    Invoke-CheckedNative -Command $CMakePath `
+        -Arguments @("-S", ".", "-B", "build-console", "-DNOTION_CLIPBOARD_WIN_GUI=OFF") `
+        -Description "Console build configuration"
+    Invoke-CheckedNative -Command $CMakePath `
+        -Arguments @("--build", "build-console", "--config", $Configuration) `
+        -Description "Console build"
+    Invoke-CheckedNative -Command $CTestPath `
+        -Arguments @("--test-dir", "build-console", "-C", $Configuration, "--output-on-failure") `
+        -Description "CTest suite"
 
     $ReleaseExe = Join-Path $Root "build\$Configuration\notion_clipboard_win.exe"
     $RunningRelease = Get-CimInstance Win32_Process -Filter "name = 'notion_clipboard_win.exe'" |
@@ -121,8 +148,12 @@ try {
         throw "build\$Configuration\notion_clipboard_win.exe is running. Exit it from the tray before building the installer."
     }
 
-    & $CMakePath -S . -B build -DNOTION_CLIPBOARD_WIN_GUI=ON
-    & $CMakePath --build build --config $Configuration
+    Invoke-CheckedNative -Command $CMakePath `
+        -Arguments @("-S", ".", "-B", "build", "-DNOTION_CLIPBOARD_WIN_GUI=ON") `
+        -Description "GUI build configuration"
+    Invoke-CheckedNative -Command $CMakePath `
+        -Arguments @("--build", "build", "--config", $Configuration) `
+        -Description "GUI build"
 
     if (-not $IsccPath) {
         Write-Host "Inno Setup compiler ISCC.exe was not found."
@@ -131,7 +162,9 @@ try {
     }
 
     New-Item -ItemType Directory -Force -Path ".\dist" | Out-Null
-    & $IsccPath "/DAppVersion=$AppVersion" ".\installer\notion-clipboard-win.iss"
+    Invoke-CheckedNative -Command $IsccPath `
+        -Arguments @("/DAppVersion=$AppVersion", ".\installer\notion-clipboard-win.iss") `
+        -Description "Installer compilation"
 
     $Installer = ".\dist\NotionClipboardWin-$AppVersion-Setup.exe"
     if (-not (Test-Path $Installer)) {

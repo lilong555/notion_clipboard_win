@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   windows:
-    name: Windows build and self-test
+    name: Windows build and CTest
     runs-on: windows-latest
 
     steps:
@@ -24,7 +24,7 @@ jobs:
       - name: Build console app
         run: cmake --build build-console --config Release
 
-      - name: Run app self-tests
+      - name: Run CTest suite
         run: ctest --test-dir build-console -C Release --output-on-failure
 
       - name: Check installer release guards
