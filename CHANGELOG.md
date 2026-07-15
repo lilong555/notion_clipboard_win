@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Use the Node 24-based `actions/upload-artifact@v7` release workflow action to avoid the deprecated Node 20 runtime.
+
 ## 0.2.9 - 2026-07-15
 
 - Run the real `test/bf.txt` conversion fixture through CTest and CI in addition to the built-in self-test.

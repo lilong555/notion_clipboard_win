@@ -140,7 +140,7 @@ try {
             "tags:",
             "scripts/prepare-release.ps1",
             "scripts/build-installer.ps1",
-            "actions/upload-artifact@v4",
+            "actions/upload-artifact@v7",
             "Get-FileHash -Algorithm SHA256",
             "gh release create",
             "gh release upload"
