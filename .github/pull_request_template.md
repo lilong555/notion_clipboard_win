@@ -7,6 +7,7 @@
 - [ ] `ctest --test-dir build-console -C Release --output-on-failure`
 - [ ] `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -CheckOnly -AllowUnreleased -AllowExistingVersion`
 - [ ] `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-build-installer.ps1`
+- [ ] `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-automation.ps1`
 
 ## Notes
 

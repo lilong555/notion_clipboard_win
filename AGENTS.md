@@ -21,6 +21,7 @@
   - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1 -CheckOnly -AllowUnreleased -AllowExistingVersion`
 - 生成安装包：
   - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps1`
+- 正式发布：更新 `VERSION` 和 `CHANGELOG.md` 后推送匹配的 `vX.Y.Z` tag，由 `.github/workflows/release.yml` 构建并发布安装包。
 
 ## 测试
 
@@ -28,7 +29,8 @@
 - 通用 dry run：`.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt`
 - Obsidian 调试输出：`.\build-console\Release\notion_clipboard_win.exe --dry-run-obsidian-file .\test\bf.txt .\test\bf.obsidian.md`
 - 安装包脚本回归：`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-build-installer.ps1`
-- CI：`.github/workflows/ci.yml` 在 Windows 上运行 console 构建、CTest 自测、门禁快检和安装包脚本回归。
+- 发布自动化回归：`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-automation.ps1`
+- CI：`.github/workflows/ci.yml` 在 Windows 上运行 console 构建、CTest、门禁快检、安装包和发布自动化回归。
 
 ## 安全
 

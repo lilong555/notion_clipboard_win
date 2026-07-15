@@ -236,6 +236,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps
 
 The script builds the console app and runs the full CTest suite before building the GUI app and writing the installer plus `.sha256` file to `dist/`. Any failed build, test, or packaging command stops the script immediately. Inno Setup must be installed locally.
 
+For a public release, update `VERSION`, move the pending `CHANGELOG.md` entries into the matching version section, commit, and push the matching `vX.Y.Z` tag. GitHub Actions rebuilds and tests the installer, retains the workflow artifact, and creates the GitHub Release from that changelog section. A mismatched tag, version, or changelog stops publication.
+
 Dry-run conversion:
 
 ```powershell

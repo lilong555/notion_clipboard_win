@@ -34,3 +34,7 @@ jobs:
       - name: Run installer guard regression tests
         shell: pwsh
         run: ./scripts/test-build-installer.ps1
+
+      - name: Run release automation regression tests
+        shell: pwsh
+        run: ./scripts/test-release-automation.ps1

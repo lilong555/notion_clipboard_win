@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  windows:
+    name: Build and publish Windows installer
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Validate release metadata
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: ./scripts/prepare-release.ps1 -Tag $env:RELEASE_TAG -NotesOutput "$env:RUNNER_TEMP\release-notes.md"
+
+      - name: Build verified installer
+        shell: pwsh
+        run: ./scripts/build-installer.ps1
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NotionClipboardWin-${{ github.ref_name }}
+          path: |
+            dist/*-Setup.exe
+            dist/*-Setup.exe.sha256
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
+          $version = (Get-Content -Raw VERSION).Trim()
+          $installer = "dist\NotionClipboardWin-$version-Setup.exe"
+          $checksum = "$installer.sha256"
+          $notes = "$env:RUNNER_TEMP\release-notes.md"
+          $title = "Notion Clipboard Win $version"
+
+          foreach ($path in @($installer, $checksum, $notes)) {
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Release file was not generated: $path"
+            }
+          }
+
+          $expectedHash = ((Get-Content -Raw -LiteralPath $checksum).Trim() -split '\s+')[0]
+          $actualHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash
+          if (-not [string]::Equals($actualHash, $expectedHash, [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Installer SHA256 does not match the generated checksum file."
+          }
+
+          & gh release view $env:RELEASE_TAG --json tagName *> $null
+          $releaseExists = $LASTEXITCODE -eq 0
+          if ($releaseExists) {
+            & gh release upload $env:RELEASE_TAG $installer $checksum --clobber
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to replace release assets."
+            }
+            & gh release edit $env:RELEASE_TAG --title $title --notes-file $notes
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to update release metadata."
+            }
+          }
+          else {
+            & gh release create $env:RELEASE_TAG $installer $checksum --verify-tag --title $title --notes-file $notes
+            if ($LASTEXITCODE -ne 0) {
+              throw "Failed to create GitHub release."
+            }
+          }

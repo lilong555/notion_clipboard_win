@@ -236,6 +236,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build-installer.ps
 
 脚本会先构建控制台版并运行完整 CTest，全部通过后再构建 GUI 版，并在 `dist/` 生成安装包和 `.sha256` 校验文件。任何构建、测试或打包命令失败都会立即停止。需要本机已安装 Inno Setup。
 
+正式发布时，先更新 `VERSION`，把 `CHANGELOG.md` 的未发布条目移动到对应版本小节并提交，然后推送同版本的 `vX.Y.Z` tag。GitHub Actions 会重新执行完整安装包构建，保存构建产物，并用该版本的 changelog 自动创建 GitHub Release；tag、版本号或 changelog 不一致时不会发布。
+
 转换 dry run：
 
 ```powershell
