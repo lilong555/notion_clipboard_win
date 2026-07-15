@@ -446,6 +446,15 @@ CliOptions ParseCli(int argc, wchar_t **argv)
             options.dry_run = true;
             options.dry_run_file_path = fs::path(argv[++i]);
         }
+        else if (arg == L"--dry-run-notion-file")
+        {
+            if (i + 2 >= argc)
+            {
+                throw std::runtime_error("--dry-run-notion-file 缺少输入或输出路径");
+            }
+            options.dry_run_notion_input_path = fs::path(argv[++i]);
+            options.dry_run_notion_output_path = fs::path(argv[++i]);
+        }
         else if (arg == L"--dry-run-obsidian-file")
         {
             if (i + 2 >= argc)
@@ -620,7 +629,7 @@ int RunConfigSelfTest()
         for (const char *needle : {"--validate-config", "--test-upload-url", "--open-upload-center-url",
                                    "--retry-failed-job-url", "--retry-failed-uploads-url", "markdown_file",
                                    "Markdown 文件", "webhook", "yuque", "feishu", "语雀", "飞书", "上传",
-                                   "--dry-run-obsidian-file", "调试生成"})
+                                   "--dry-run-notion-file", "--dry-run-obsidian-file", "调试生成"})
         {
             if (help.find(needle) != std::string::npos)
             {

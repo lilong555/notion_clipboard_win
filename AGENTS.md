@@ -27,6 +27,7 @@
 
 - 转换回归：`ctest --test-dir build-console -C Release --output-on-failure`
 - 通用 dry run：`.\build-console\Release\notion_clipboard_win.exe --dry-run-file .\test\bf.txt`
+- Notion 调试输出：`.\build-console\Release\notion_clipboard_win.exe --dry-run-notion-file .\test\bf.txt .\test\bf.notion.json`
 - Obsidian 调试输出：`.\build-console\Release\notion_clipboard_win.exe --dry-run-obsidian-file .\test\bf.txt .\test\bf.obsidian.md`
 - 安装包脚本回归：`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-build-installer.ps1`
 - 发布自动化回归：`powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\test-release-automation.ps1`

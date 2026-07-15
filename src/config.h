@@ -51,6 +51,8 @@ struct CliOptions
 
     std::filesystem::path config_path;
     std::filesystem::path dry_run_file_path;
+    std::filesystem::path dry_run_notion_input_path;
+    std::filesystem::path dry_run_notion_output_path;
     std::filesystem::path dry_run_obsidian_input_path;
     std::filesystem::path dry_run_obsidian_output_path;
     std::string apply_config_url;

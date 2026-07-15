@@ -212,7 +212,7 @@ cmake --build build-console --config Release
 ctest --test-dir build-console -C Release --output-on-failure
 ```
 
-CTest 会同时运行内置自测、`test/bf.txt` 的 Notion 与 Obsidian 长文本转换，并校验 Obsidian 输出的关键结构。CI 还会执行发版门禁快检和安装包脚本回归；提交前建议至少跑上面的 CTest。
+CTest 会同时运行内置自测、`test/bf.txt` 的 Notion 与 Obsidian 长文本转换，并校验两种输出的公式、链接和关键结构。CI 还会执行发版门禁快检和安装包脚本回归；提交前建议至少跑上面的 CTest。
 
 发版前检查：
 

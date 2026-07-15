@@ -82,10 +82,18 @@ else()
 endif()
 
 if(BUILD_TESTING AND NOT NOTION_CLIPBOARD_WIN_GUI)
+    set(BF_NOTION_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Testing/Temporary/bf.notion.json")
     set(BF_OBSIDIAN_OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/Testing/Temporary/bf.obsidian.md")
     add_test(NAME self_test COMMAND notion_clipboard_win --self-test)
     add_test(NAME bf_dry_run
         COMMAND notion_clipboard_win --dry-run-file "${CMAKE_CURRENT_SOURCE_DIR}/test/bf.txt")
+    add_test(NAME bf_notion_dry_run
+        COMMAND notion_clipboard_win --dry-run-notion-file
+            "${CMAKE_CURRENT_SOURCE_DIR}/test/bf.txt"
+            "${BF_NOTION_OUTPUT}")
+    add_test(NAME bf_notion_verify
+        COMMAND "${CMAKE_COMMAND}" "-DINPUT=${BF_NOTION_OUTPUT}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify-notion-fixture.cmake")
     add_test(NAME bf_obsidian_dry_run
         COMMAND notion_clipboard_win --dry-run-obsidian-file
             "${CMAKE_CURRENT_SOURCE_DIR}/test/bf.txt"
@@ -93,6 +101,7 @@ if(BUILD_TESTING AND NOT NOTION_CLIPBOARD_WIN_GUI)
     add_test(NAME bf_obsidian_verify
         COMMAND "${CMAKE_COMMAND}" "-DINPUT=${BF_OBSIDIAN_OUTPUT}"
             -P "${CMAKE_CURRENT_SOURCE_DIR}/scripts/verify-obsidian-fixture.cmake")
-    set_tests_properties(self_test bf_dry_run bf_obsidian_dry_run PROPERTIES TIMEOUT 120)
+    set_tests_properties(self_test bf_dry_run bf_notion_dry_run bf_obsidian_dry_run PROPERTIES TIMEOUT 120)
+    set_tests_properties(bf_notion_verify PROPERTIES DEPENDS bf_notion_dry_run TIMEOUT 30)
     set_tests_properties(bf_obsidian_verify PROPERTIES DEPENDS bf_obsidian_dry_run TIMEOUT 30)
 endif()

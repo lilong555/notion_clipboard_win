@@ -212,7 +212,7 @@ cmake --build build-console --config Release
 ctest --test-dir build-console -C Release --output-on-failure
 ```
 
-CTest runs the built-in self-test, Notion and Obsidian long-form conversions of `test/bf.txt`, and structural checks on the Obsidian output. CI also runs release-guard and installer-guard checks; before submitting changes, run at least the CTest command above.
+CTest runs the built-in self-test, Notion and Obsidian long-form conversions of `test/bf.txt`, and formula, link, and structural checks on both outputs. CI also runs release-guard and installer-guard checks; before submitting changes, run at least the CTest command above.
 
 Check release guards before packaging:
 

@@ -45,6 +45,7 @@ using ncw::CreateGeneratedAppIcon;
 using ncw::LastErrorMessage;
 using ncw::AppConfig;
 using ncw::AtomicWriteFile;
+using ncw::BuildNotionBlocksDebugJson;
 using ncw::BuildObsidianMarkdownDebugDocument;
 using ncw::BuildTextBlocks;
 using ncw::BuildTitleFromContent;
@@ -2283,6 +2284,25 @@ int RetryFailedJobUrlAndOpenCenter(const std::string &url)
     return 0;
 }
 
+int RunNotionDryRunFile(const std::filesystem::path &input_path, const std::filesystem::path &output_path,
+                        bool quiet = false)
+{
+    const std::string input = Trim(NormalizeLineEndings(ReadWholeFile(input_path)));
+    if (input.empty())
+    {
+        throw std::runtime_error("输入文件没有可转换的文本");
+    }
+
+    const std::string output = BuildNotionBlocksDebugJson(input);
+    AtomicWriteFile(output_path, output);
+    if (!quiet)
+    {
+        std::cout << "notion dry-run: title=" << BuildTitleFromContent(input) << "，bytes=" << output.size()
+                  << "，output=" << WideToUtf8(output_path.wstring()) << "\n";
+    }
+    return 0;
+}
+
 int RunObsidianDryRunFile(const std::filesystem::path &input_path, const std::filesystem::path &output_path,
                           const std::string &obsidian_tags, bool quiet = false)
 {
@@ -2398,6 +2418,18 @@ int RunMainSelfTest()
         }
         {
             wchar_t exe[] = L"notion_clipboard_win.exe";
+            wchar_t flag[] = L"--dry-run-notion-file";
+            wchar_t input[] = L"C:\\Temp\\in.md";
+            wchar_t output[] = L"C:\\Temp\\out.json";
+            wchar_t *argv[] = {exe, flag, input, output};
+            const CliOptions parsed = ParseCli(4, argv);
+            if (parsed.dry_run_notion_input_path.empty() || parsed.dry_run_notion_output_path.empty())
+            {
+                fail("dry-run-notion-file paths were not parsed");
+            }
+        }
+        {
+            wchar_t exe[] = L"notion_clipboard_win.exe";
             wchar_t flag[] = L"--dry-run-obsidian-file";
             wchar_t input[] = L"C:\\Temp\\in.md";
             wchar_t output[] = L"C:\\Temp\\out.md";
@@ -2406,6 +2438,27 @@ int RunMainSelfTest()
             if (parsed.dry_run_obsidian_input_path.empty() || parsed.dry_run_obsidian_output_path.empty())
             {
                 fail("dry-run-obsidian-file paths were not parsed");
+            }
+        }
+        {
+            const fs::path input_path = root / L"notion-debug-input.md";
+            const fs::path output_path = root / L"notion-debug-output.json";
+            AtomicWriteFile(input_path,
+                            "# 调试标题\n\n"
+                            "公式 $x$，普通 $AAA$。\n\n"
+                            "$$\n"
+                            "y+1\n"
+                            "$$\n");
+            RunNotionDryRunFile(input_path, output_path, true);
+            const std::string debug_json = ReadWholeFile(output_path);
+            if (debug_json.find("\"type\":\"heading_1\"") == std::string::npos ||
+                debug_json.find("\"expression\":\"x\"") == std::string::npos ||
+                debug_json.find("\"expression\":\"y+1\"") == std::string::npos ||
+                debug_json.find("AAA") == std::string::npos ||
+                debug_json.find("\"expression\":\"AAA\"") != std::string::npos ||
+                debug_json.find("$AAA$") != std::string::npos)
+            {
+                fail("dry-run-notion-file did not write expected Notion block JSON");
             }
         }
         {
@@ -2745,6 +2798,10 @@ int AppMain(int argc, wchar_t **argv)
     if (!cli.dry_run_file_path.empty())
     {
         return RunDryRunText(ReadWholeFile(cli.dry_run_file_path));
+    }
+    if (!cli.dry_run_notion_input_path.empty())
+    {
+        return RunNotionDryRunFile(cli.dry_run_notion_input_path, cli.dry_run_notion_output_path);
     }
     if (!cli.dry_run_obsidian_input_path.empty())
     {

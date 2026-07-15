@@ -4122,6 +4122,24 @@ std::vector<std::string> BuildTextBlocks(const std::string &content)
     return blocks;
 }
 
+std::string BuildNotionBlocksDebugJson(const std::string &content)
+{
+    const std::vector<std::string> blocks = BuildTextBlocks(content);
+    std::ostringstream output;
+    output << "[\n";
+    for (std::size_t i = 0; i < blocks.size(); ++i)
+    {
+        output << blocks[i];
+        if (i + 1 < blocks.size())
+        {
+            output << ",";
+        }
+        output << "\n";
+    }
+    output << "]\n";
+    return output.str();
+}
+
 std::size_t EstimateAppendChildrenBodyBytes(const std::vector<std::string> &blocks, std::size_t begin, std::size_t end)
 {
     std::size_t bytes = std::string("{\"children\":[]}").size();

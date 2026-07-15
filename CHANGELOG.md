@@ -7,6 +7,7 @@
 - Verify the generated Obsidian fixture structure and guard against the removed source marker in CTest.
 - Run the complete CTest suite before installer packaging and stop immediately when native build or packaging commands fail.
 - Add tag-driven GitHub Release automation with strict version and changelog validation, verified installer assets, and safe reruns.
+- Verify the real `test/bf.txt` Notion block JSON structure, equation count, uppercase text handling, and absence of false links in CTest.
 
 ## 0.2.8 - 2026-07-14
 

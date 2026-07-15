@@ -18,6 +18,7 @@ std::string BuildTextRichText(const std::string &text, bool bold = false, bool c
                               bool underline = false, const std::string &color = "default");
 
 std::vector<std::string> BuildTextBlocks(const std::string &content);
+std::string BuildNotionBlocksDebugJson(const std::string &content);
 std::size_t SelectAppendBatchEnd(const std::vector<std::string> &blocks, std::size_t begin, std::size_t max_blocks,
                                  std::size_t max_request_bytes);
 
