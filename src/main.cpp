@@ -113,6 +113,7 @@ constexpr UINT kMenuOpenLog = 3009;
 constexpr UINT kMenuExit = 3011;
 constexpr UINT kMenuOpenConfigPage = 3012;
 constexpr UINT kMenuOpenRecentUploads = 3013;
+constexpr UINT kMenuOpenLastNotion = 3015;
 constexpr UINT kMenuOpenLastObsidian = 3016;
 constexpr const wchar_t *kAppDisplayName = L"Notion Clipboard Win";
 
@@ -268,6 +269,11 @@ std::filesystem::path RecentUploadResultsPath(const AppConfig &config)
     return config.state_dir / L"recent-upload-results.md";
 }
 
+std::filesystem::path LastNotionUploadPath(const AppConfig &config)
+{
+    return config.state_dir / L"last-notion-upload.ini";
+}
+
 std::filesystem::path LastObsidianUploadPath(const AppConfig &config)
 {
     return config.state_dir / L"last-obsidian-upload.ini";
@@ -385,6 +391,35 @@ void WriteRecentUploadResultReport(const std::filesystem::path &path, const Uplo
     AtomicWriteFile(path, content);
 }
 
+bool IsSafeWebUrl(const std::string &url)
+{
+    const std::string trimmed = Trim(url);
+    if (trimmed.find_first_of("\r\n") != std::string::npos)
+    {
+        return false;
+    }
+    const std::string lower = ToLowerAscii(trimmed);
+    return lower.rfind("https://", 0) == 0 || lower.rfind("http://", 0) == 0;
+}
+
+void WriteLastNotionUploadState(const std::filesystem::path &path, const UploadJob &job)
+{
+    if (job.target != "notion" || !IsSafeWebUrl(job.remote_url))
+    {
+        return;
+    }
+
+    std::ostringstream content;
+    content << "updated=" << IsoUtcTimestampFromUnixMs(NowUnixMs()) << "\n"
+            << "title=" << ReportLineValue(job.title) << "\n"
+            << "url=" << ReportLineValue(job.remote_url) << "\n";
+    if (!job.remote_id.empty())
+    {
+        content << "page_id=" << ReportLineValue(job.remote_id) << "\n";
+    }
+    AtomicWriteFile(path, content.str());
+}
+
 void WriteLastObsidianUploadState(const std::filesystem::path &path, const UploadJob &job)
 {
     if (job.target != "obsidian" || job.remote_id.empty())
@@ -401,6 +436,12 @@ void WriteLastObsidianUploadState(const std::filesystem::path &path, const Uploa
         content << "uri=" << ReportLineValue(job.remote_url) << "\n";
     }
     AtomicWriteFile(path, content.str());
+}
+
+void WriteLastSuccessfulUploadState(const AppConfig &config, const UploadJob &job)
+{
+    WriteLastNotionUploadState(LastNotionUploadPath(config), job);
+    WriteLastObsidianUploadState(LastObsidianUploadPath(config), job);
 }
 
 std::optional<std::string> ReadStateValue(const std::filesystem::path &path, const std::string &key)
@@ -449,6 +490,15 @@ std::optional<std::wstring> ChooseLastObsidianOpenTarget(const std::optional<std
         return Utf8ToWide(*uri);
     }
     return std::nullopt;
+}
+
+std::optional<std::wstring> ChooseLastNotionOpenTarget(const std::optional<std::string> &url)
+{
+    if (!url.has_value() || !IsSafeWebUrl(*url))
+    {
+        return std::nullopt;
+    }
+    return Utf8ToWide(Trim(*url));
 }
 
 HICON LoadApplicationIcon(HINSTANCE instance, int width, int height)
@@ -526,7 +576,7 @@ bool RunConfigTestUpload(const AppConfig &config, Logger *logger)
             upload_target->Validate();
             upload_target->ProcessJob(&job, [] {});
             WriteRecentUploadResultReport(recent_path, job, true, "");
-            WriteLastObsidianUploadState(LastObsidianUploadPath(config), job);
+            WriteLastSuccessfulUploadState(config, job);
             if (logger != nullptr)
             {
                 logger->Info("测试保存成功: [" + target_name + "] " + job.id +
@@ -1155,9 +1205,9 @@ private:
         try
         {
             WriteRecentUploadResultReport(RecentUploadResultsPath(*config_), job, success, detail);
-            if (success && job.target == "obsidian")
+            if (success)
             {
-                WriteLastObsidianUploadState(LastObsidianUploadPath(*config_), job);
+                WriteLastSuccessfulUploadState(*config_, job);
             }
         }
         catch (const std::exception &ex)
@@ -1261,6 +1311,8 @@ private:
         AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         AppendMenuW(menu, MF_STRING, kMenuOpenConfigPage, L"打开配置页面");
         AppendMenuW(menu, MF_STRING, kMenuOpenRecentUploads, L"打开保存记录");
+        AppendMenuW(menu, MF_STRING | (fs::exists(LastNotionUploadPath(*config_)) ? MF_ENABLED : MF_GRAYED),
+                    kMenuOpenLastNotion, L"打开最近 Notion 页面");
         AppendMenuW(menu, MF_STRING | (fs::exists(LastObsidianUploadPath(*config_)) ? MF_ENABLED : MF_GRAYED),
                     kMenuOpenLastObsidian, L"打开最近 Obsidian 笔记");
         AppendMenuW(menu, MF_STRING, kMenuOpenLog, L"查看日志");
@@ -1298,6 +1350,9 @@ private:
             break;
         case kMenuOpenRecentUploads:
             OpenUploadCenter();
+            break;
+        case kMenuOpenLastNotion:
+            OpenLastNotionUpload();
             break;
         case kMenuOpenLastObsidian:
             OpenLastObsidianUpload();
@@ -1546,26 +1601,6 @@ private:
         }
     }
 
-    void OpenRecentUploadResults()
-    {
-        const fs::path path = RecentUploadResultsPath(*config_);
-        if (!fs::exists(path))
-        {
-            try
-            {
-                AtomicWriteFile(path, "# Recent Save Results\n\n还没有保存结果。保存成功或失败后会在这里记录 Notion URL 和 Obsidian 文件路径。\n");
-            }
-            catch (const std::exception &ex)
-            {
-                if (logger_ != nullptr)
-                {
-                    logger_->Warn("创建最近保存结果文件失败: " + std::string(ex.what()));
-                }
-            }
-        }
-        OpenPath(path);
-    }
-
     void OpenUploadCenter()
     {
         try
@@ -1588,6 +1623,30 @@ private:
         return reinterpret_cast<INT_PTR>(result) > 32;
     }
 
+    void OpenLastNotionUpload()
+    {
+        const fs::path state_path = LastNotionUploadPath(*config_);
+        try
+        {
+            const std::optional<std::wstring> target = ChooseLastNotionOpenTarget(ReadStateValue(state_path, "url"));
+            if (target.has_value() && TryOpenShellTarget(*target))
+            {
+                return;
+            }
+            ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Notion 页面，请查看保存记录。");
+            OpenUploadCenter();
+        }
+        catch (const std::exception &ex)
+        {
+            if (logger_ != nullptr)
+            {
+                logger_->Warn("打开最近 Notion 页面失败: " + std::string(ex.what()));
+            }
+            ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Notion 页面，请查看保存记录。");
+            OpenUploadCenter();
+        }
+    }
+
     void OpenLastObsidianUpload()
     {
         const fs::path state_path = LastObsidianUploadPath(*config_);
@@ -1604,7 +1663,7 @@ private:
             if (!opened)
             {
                 ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Obsidian 笔记，请查看保存记录。");
-                OpenRecentUploadResults();
+                OpenUploadCenter();
             }
         }
         catch (const std::exception &ex)
@@ -1614,7 +1673,7 @@ private:
                 logger_->Warn("打开最近 Obsidian 笔记失败: " + std::string(ex.what()));
             }
             ShowNotification(L"Notion Clipboard Win", L"无法打开最近 Obsidian 笔记，请查看保存记录。");
-            OpenRecentUploadResults();
+            OpenUploadCenter();
         }
     }
 
@@ -1871,6 +1930,7 @@ int RunOnce(const AppConfig &config, PersistentQueue *queue, UploadTarget *targe
         try
         {
             target->ProcessJob(&target_job, [] {});
+            WriteLastSuccessfulUploadState(config, target_job);
             logger->Info("保存成功: " + target_job.id + " [" + target_name + "]" +
                          (target_job.remote_url.empty() ? "" : " -> " + target_job.remote_url));
         }
@@ -2588,6 +2648,31 @@ int RunMainSelfTest()
             *last_title != callback_job.title || last_obsidian.find("notion-page-id") != std::string::npos)
         {
             fail("last obsidian upload state content mismatch");
+        }
+        const fs::path last_notion_path = root / L"last-notion-upload.ini";
+        WriteLastNotionUploadState(last_notion_path, notion_job);
+        WriteLastNotionUploadState(last_notion_path, callback_job);
+        UploadJob unsafe_notion_job = notion_job;
+        unsafe_notion_job.remote_url = "javascript:alert(1)";
+        WriteLastNotionUploadState(last_notion_path, unsafe_notion_job);
+        const std::string last_notion = ReadWholeFile(last_notion_path);
+        const std::optional<std::string> last_notion_url = ReadStateValue(last_notion_path, "url");
+        const std::optional<std::string> last_notion_page_id = ReadStateValue(last_notion_path, "page_id");
+        const std::optional<std::string> last_notion_title = ReadStateValue(last_notion_path, "title");
+        if (last_notion.find("updated=") == std::string::npos || !last_notion_url.has_value() ||
+            *last_notion_url != notion_job.remote_url || !last_notion_page_id.has_value() ||
+            *last_notion_page_id != notion_job.remote_id || !last_notion_title.has_value() ||
+            *last_notion_title != notion_job.title || last_notion.find("obsidian://") != std::string::npos)
+        {
+            fail("last notion upload state content mismatch");
+        }
+        const std::optional<std::wstring> notion_open_target = ChooseLastNotionOpenTarget(last_notion_url);
+        const std::optional<std::wstring> unsafe_notion_target =
+            ChooseLastNotionOpenTarget(std::string("javascript:alert(1)"));
+        if (!notion_open_target.has_value() || *notion_open_target != Utf8ToWide(notion_job.remote_url) ||
+            unsafe_notion_target.has_value())
+        {
+            fail("last notion open target validation mismatch");
         }
         const fs::path last_existing_file = root / L"existing-vault" / L"Inbox" / L"Worker Callback.md";
         fs::create_directories(last_existing_file.parent_path());

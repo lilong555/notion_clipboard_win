@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Use the Node 24-based `actions/upload-artifact@v7` release workflow action to avoid the deprecated Node 20 runtime.
+- Add a tray action for opening the latest successful Notion page, and route failed Notion or Obsidian opens to the visual save records page instead of the raw Markdown report.
 
 ## 0.2.9 - 2026-07-15
 

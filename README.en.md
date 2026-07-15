@@ -15,7 +15,7 @@ The project currently focuses on two stable targets: **Notion** and **Obsidian**
 - Convert Markdown, HTML, code blocks, tables, inline formulas, and display formulas.
 - Built-in local configuration page, so most users do not need to edit ini files by hand, including hotkey recording and test save.
 - Failed saves are queued locally and can be retried later.
-- Tray menu for saving the current clipboard, opening save records, viewing logs, and opening the latest Obsidian note.
+- Tray menu for saving the current clipboard, opening save records, viewing logs, and opening the latest Notion page or Obsidian note.
 
 ## User Guide
 
@@ -123,7 +123,7 @@ You can also right-click the tray icon and choose "保存当前剪贴板" (save 
 
 After a successful save:
 
-- Notion: save records include the Notion page link.
+- Notion: save records include the page link, and the tray menu can open the latest Notion page directly.
 - Obsidian: the Markdown file appears in the configured vault folder.
 - The tray menu can open the latest Obsidian note directly.
 
